@@ -27,6 +27,9 @@ const EnvSchema = z.object({
     .string()
     .default('false')
     .transform((s) => s === 'true'),
+  // 'strict' for same-site (subdomains/one origin); 'none' for cross-site hosting
+  // (e.g. free split hosting: app on Netlify, API on Render). 'none' requires Secure=true.
+  COOKIE_SAMESITE: z.enum(['strict', 'lax', 'none']).default('strict'),
 
   BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
 

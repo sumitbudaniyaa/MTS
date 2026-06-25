@@ -14,7 +14,7 @@ function refreshCookieOptions(expiresAt: Date): CookieOptions {
   return {
     httpOnly: true,
     secure: env.COOKIE_SECURE,
-    sameSite: 'strict',
+    sameSite: env.COOKIE_SAMESITE,
     domain: env.COOKIE_DOMAIN,
     path: '/api/v1/auth',
     expires: expiresAt,
