@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { ArrowLeft, Plus, Trash2, Search, Pencil, Upload, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { api, apiErrorMessage } from '@/lib/api';
+import { mobileField, onlyDigits10 } from '@/lib/mobile';
 import type { Paginated, Personnel, Unit } from '@/types';
 import { PageHeader, Badge, LoadingState, EmptyState, ErrorState } from '@/components/ui/Misc';
 import { Button } from '@/components/ui/Button';
@@ -257,7 +258,7 @@ function PersonnelFormModal({
         <Input
           label="Mobile"
           error={errors.mobile?.message}
-          {...register('mobile', { required: 'Required', pattern: { value: /^\d{10}$/, message: '10 digits' } })}
+          {...mobileField(register('mobile', { required: 'Required', pattern: { value: /^\d{10}$/, message: '10 digits' } }))}
         />
         <PasswordInput
           label="Password"
@@ -280,7 +281,10 @@ function PersonnelFormModal({
       </div>
 
       {married && (
-        <Input label="Spouse mobile (spouse logs in with the same password)" {...register('spouseMobile')} />
+        <Input
+          label="Spouse mobile (spouse logs in with the same password)"
+          {...mobileField(register('spouseMobile'))}
+        />
       )}
 
       <p className="text-xs text-muted">
@@ -365,8 +369,10 @@ function EditPersonnelModal({
       {maritalStatus === 'MARRIED' && (
         <Input
           label="Spouse mobile (logs in with the same password)"
+          inputMode="numeric"
+          maxLength={10}
           value={spouseMobile}
-          onChange={(e) => setSpouseMobile(e.target.value)}
+          onChange={(e) => setSpouseMobile(onlyDigits10(e.target.value))}
         />
       )}
 

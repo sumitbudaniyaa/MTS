@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { Plus, Trash2, Search } from 'lucide-react';
 import { api, apiErrorMessage } from '@/lib/api';
+import { mobileField } from '@/lib/mobile';
 import type { Paginated, Personnel } from '@/types';
 import { PageHeader, LoadingState, EmptyState, ErrorState } from '@/components/ui/Misc';
 import { Button } from '@/components/ui/Button';
@@ -163,7 +164,7 @@ function ScannerFormModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
         <Input
           label="Mobile"
           error={errors.mobile?.message}
-          {...register('mobile', { required: 'Required', pattern: { value: /^\d{10}$/, message: '10 digits' } })}
+          {...mobileField(register('mobile', { required: 'Required', pattern: { value: /^\d{10}$/, message: '10 digits' } }))}
         />
         <Input
           label="Password"

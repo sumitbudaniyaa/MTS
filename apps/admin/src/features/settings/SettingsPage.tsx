@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/Input';
 import { PasswordInput } from '@/components/ui/PasswordInput';
 import { Modal, ConfirmDialog } from '@/components/ui/Modal';
+import { onlyDigits10 } from '@/lib/mobile';
 import { useAuthStore } from '@/stores/auth.store';
 
 interface AdminRow {
@@ -243,9 +244,10 @@ function CreateAdminDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
         <Input
           label="Mobile"
           inputMode="numeric"
+          maxLength={10}
           placeholder="10-digit mobile"
           value={mobile}
-          onChange={(e) => setMobile(e.target.value)}
+          onChange={(e) => setMobile(onlyDigits10(e.target.value))}
         />
         <Input label="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
       </div>

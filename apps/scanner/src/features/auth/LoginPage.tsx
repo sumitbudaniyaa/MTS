@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button';
 import { PasswordField } from '@/components/ui/PasswordField';
 import { login } from './useAuth';
 import { apiErrorMessage } from '@/lib/api';
+import { onlyDigits10 } from '@/lib/mobile';
 
 export function LoginPage() {
   const [mobile, setMobile] = useState('');
@@ -39,9 +40,10 @@ export function LoginPage() {
               id="mobile"
               className="input"
               inputMode="numeric"
+              maxLength={10}
               placeholder="10-digit mobile"
               value={mobile}
-              onChange={(e) => setMobile(e.target.value)}
+              onChange={(e) => setMobile(onlyDigits10(e.target.value))}
             />
           </div>
           <PasswordField

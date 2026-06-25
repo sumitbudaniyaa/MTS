@@ -5,6 +5,7 @@ import { PasswordInput } from '@/components/ui/PasswordInput';
 import { Button } from '@/components/ui/Button';
 import { login } from './useAuth';
 import { apiErrorMessage } from '@/lib/api';
+import { mobileField } from '@/lib/mobile';
 
 interface FormValues {
   mobile: string;
@@ -38,13 +39,14 @@ export function LoginPage() {
           <Input
             label="Mobile number"
             id="mobile"
-            inputMode="numeric"
             placeholder="10-digit mobile"
             error={errors.mobile?.message}
-            {...register('mobile', {
-              required: 'Mobile is required',
-              pattern: { value: /^\d{10}$/, message: 'Enter a 10-digit mobile' },
-            })}
+            {...mobileField(
+              register('mobile', {
+                required: 'Mobile is required',
+                pattern: { value: /^\d{10}$/, message: 'Enter a 10-digit mobile' },
+              }),
+            )}
           />
           <PasswordInput
             label="Password"
