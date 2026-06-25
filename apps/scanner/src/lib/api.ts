@@ -1,7 +1,11 @@
 import axios, { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '@/stores/auth.store';
 
-const baseURL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api/v1';
+// Base API URL. Tolerates VITE_API_URL set with OR without the /api/v1 path.
+const RAW_API = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api/v1';
+const baseURL = /\/api\/v1\/?$/.test(RAW_API)
+  ? RAW_API.replace(/\/+$/, '')
+  : `${RAW_API.replace(/\/+$/, '')}/api/v1`;
 
 /** Cookie-bearing axios instance (refresh token is an HttpOnly cookie). */
 export const api: AxiosInstance = axios.create({ baseURL, withCredentials: true });
