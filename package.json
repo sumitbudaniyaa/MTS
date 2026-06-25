@@ -1,0 +1,11 @@
+{
+  "name": "auditorium-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Army Auditorium Booking Platform — monorepo dev launcher",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "install:all": "npm --prefix apps/backend install && npm --prefix apps/admin install && npm --prefix apps/user install && npm --prefix apps/scanner install"
+  }
+}
