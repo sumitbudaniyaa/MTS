@@ -95,6 +95,9 @@ Personnel **ranks** (OFFICER/JCO/JAWAN) gate seat booking — see §3.10.
   `family`. Reuse of a revoked token revokes the entire family (theft detection).
 - Logout revokes the active refresh family.
 - Refresh tokens are stored **hashed** (never plaintext) in `refreshtokens`.
+- Cookie attributes are env-driven: `COOKIE_SECURE`, `COOKIE_DOMAIN`, and **`COOKIE_SAMESITE`**
+  (`strict` for same-site / one origin; **`none` + `Secure=true`** for cross-site hosting such
+  as apps on Vercel + API on Render).
 - Rotation is **resilient to the reload / two-tab race**: a just-rotated token (revoked but
   with a successor, not expired) is still accepted and re-issues a fresh token, so legitimate
   sessions are never spuriously logged out. Only a token revoked **without** a successor
@@ -168,6 +171,9 @@ user + scanner are mobile-first. Minimalist design, compact rounded controls, pa
 toggles, and **numeric inputs with no spinner arrows that can be fully cleared while typing**
 (`NumberInput`). **No React.StrictMode** in the web apps (its dev double-mount broke
 refresh-token rotation and the camera). Access token in memory; silent re-auth via cookie.
+Only one frontend env var: **`VITE_API_URL`** (build-time). It's normalized to **tolerate
+being set with or without the `/api/v1` suffix** (auto-appended if missing). Every mobile-
+number input is **strictly digits-only, capped at 10** (`onlyDigits10` / `mobileField`).
 
 ## 5. Environment & Config
 All config via env, validated by Zod at boot (`config/env.ts`) — process exits on invalid

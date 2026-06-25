@@ -111,7 +111,36 @@ Base path `/api/v1`. Full surface in [architecture.md](architecture.md#71-api-su
 
 ### End-to-end flow
 1. Admin → **Auditorium**: design rows/seats + allowed ranks → Save.
-2. Admin → **Movies**: create a movie, then **Generate seats**.
+2. Admin → **Movies**: create a movie (seats are auto-generated from the auditorium; total
+   seats come from the layout). Movies are shown to users early; **booking opens 1 h before**
+   showtime. Optional per-movie **"Open to all ranks"**.
 3. User app → open the movie → pick seats on the **live map** (open two browsers to see
-   seats lock in real time) → **Confirm** → QR tickets show the seat label.
+   seats lock in real time) → **Confirm** → QR tickets show the seat label. Cancelling frees
+   the seat live.
 4. Scanner app → pick the movie → scan the QR → verified / already-used / invalid.
+
+## Deployment (free tier: Vercel + Render + Atlas)
+
+No Docker. Host the **API on Render** (free web service — keeps WebSockets + cron jobs alive;
+ping `/health` with UptimeRobot so the free dyno doesn't sleep), the **three apps on Vercel**
+(static), and **MongoDB on Atlas** (free M0).
+
+**Render — API** (`apps/backend`):
+- Build: `npm install --include=dev && npm run build` · Start: `npm start`
+- Env: `NODE_ENV=production`, `MONGO_URI`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`,
+  `COOKIE_SECURE=true`, `COOKIE_SAMESITE=none` (cross-site), `COOKIE_DOMAIN=` (blank),
+  `CORS_ORIGINS=https://<admin>.vercel.app,https://<user>.vercel.app,https://<scanner>.vercel.app`
+
+**Vercel — each app** (one project per app, root dir `apps/admin` / `apps/user` / `apps/scanner`):
+- Build: `npm install && npm run build` · Output: `dist` · Framework: Vite
+- Env: `VITE_API_URL=https://<api>.onrender.com/api/v1` (the `/api/v1` is auto-appended if
+  you omit it). SPA routing is handled by each app's `vercel.json`.
+- ⚠️ Vercel bakes env vars at **build time** — set the var, then trigger a fresh deploy.
+
+**Gotchas:** devDependencies are needed to compile the API, so the build command uses
+`--include=dev`. For cross-site cookies you MUST use `COOKIE_SAMESITE=none` + `COOKIE_SECURE=true`.
+Seed the first admin via the Compass `mongosh` snippet or `npm run seed:admin`.
+
+Self-hosting alternative: run the API under **PM2** (`pm2 start ecosystem.config.cjs`) and
+serve the built apps from any static host / nginx; if everything is one origin or same-site,
+`COOKIE_SAMESITE=strict` is fine and `VITE_API_URL=/api/v1`.
