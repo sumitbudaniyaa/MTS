@@ -206,10 +206,13 @@ Notable post-build changes folded in:
 - **Movie duration / booking window**: movies carry `durationMinutes`; booking stays open until
   the show's end time. **No-shows** (unscanned 15 min after start) are expired and their seats
   **freed live** so walk-ins can re-book mid-show.
-- **Refresh-rotation race grace** + no StrictMode in web apps → no logout on reload. The 401
-  interceptor **and** the app-load bootstrap now share **one deduped `refreshSession()`**, so a
-  protected-page reload can't fire two concurrent `/auth/refresh` calls (which rotated the cookie
-  twice and stranded the browser on an orphaned token — the user-app logout-on-refresh bug).
+- **No logout on refresh.** Root cause was the refresh cookie being set with `Domain=localhost`
+  — browsers reject `Domain=localhost`, so the cookie was never stored and never sent back on
+  reload (all three apps logged out on every refresh). Fixed by emitting a **host-only cookie**
+  (the cookie's `Domain` is omitted for a blank or `localhost` `COOKIE_DOMAIN`). Hardening on top:
+  **resilient refresh rotation**, **no StrictMode** in the web apps, and the 401 interceptor +
+  app-load bootstrap share **one deduped `refreshSession()`** so a protected-page reload can't
+  fire two concurrent `/auth/refresh` calls.
 - **Spouse dual-credential login** (shared family account, same password).
 - **Personnel ranks** (Officer/JCO/JAWAN); **unit `code`/`description` removed**.
 - **Movie lifecycle**: edit/delete locked once booking opens (`start − 1h`); single datetime.

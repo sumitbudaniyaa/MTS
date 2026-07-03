@@ -22,7 +22,11 @@ const EnvSchema = z.object({
   ACCESS_TOKEN_TTL: z.string().default('15m'),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(7),
 
-  COOKIE_DOMAIN: z.string().default('localhost'),
+  // Cookie Domain. Leave blank for a host-only cookie (correct for localhost and most single
+  // hosts). A literal "localhost" is treated as blank — browsers reject Domain=localhost, which
+  // would drop the refresh cookie and log users out on every reload. Set a real registrable
+  // domain (e.g. ".example.com") only when sharing the cookie across subdomains.
+  COOKIE_DOMAIN: z.string().default(''),
   COOKIE_SECURE: z
     .string()
     .default('false')

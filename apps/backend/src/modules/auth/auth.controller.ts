@@ -10,12 +10,21 @@ import { changePassword, getMe, login, logout, rotateRefresh } from './auth.serv
 
 const REFRESH_COOKIE = 'refresh_token';
 
+// A Domain of "localhost" (or empty) is omitted entirely and the cookie is left host-only.
+// Browsers frequently REJECT a Set-Cookie with `Domain=localhost` (it never gets stored, so
+// it's never sent back on reload → the app logs out on every refresh). Host-only cookies work
+// everywhere; a real registrable domain (e.g. ".example.com") is passed through untouched.
+const cookieDomain =
+  env.COOKIE_DOMAIN && env.COOKIE_DOMAIN.toLowerCase() !== 'localhost'
+    ? env.COOKIE_DOMAIN
+    : undefined;
+
 function refreshCookieOptions(expiresAt: Date): CookieOptions {
   return {
     httpOnly: true,
     secure: env.COOKIE_SECURE,
     sameSite: env.COOKIE_SAMESITE,
-    domain: env.COOKIE_DOMAIN,
+    domain: cookieDomain,
     path: '/api/v1/auth',
     expires: expiresAt,
   };
