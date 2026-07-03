@@ -26,6 +26,11 @@ export const setOpenToAll = asyncHandler(async (req: Request, res: Response) => 
   res.json({ openToAll: result });
 });
 
+// ---- Admin movie detail ----
+export const getMovieDetail = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await svc.getMovieAdminDetail(req.params.movieId as string));
+});
+
 // ---- Seat map (USER) ----
 export const getSeatMap = asyncHandler(async (req: Request, res: Response) => {
   const movieId = req.params.movieId as string;

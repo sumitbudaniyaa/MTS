@@ -104,7 +104,7 @@ Base path `/api/v1`. Full surface in [architecture.md](architecture.md#71-api-su
 | auth | `login` · `refresh` · `logout` · `me` · `change-password` |
 | accounts | `units` CRUD · `personnel` CRUD · `admins` (list/create) |
 | movies | CRUD · `/movies/available` (public) · `/movies/scanner` |
-| **seating** | `GET/PUT /seating/auditorium` · `POST /seating/movies/:id/generate` · `/seats` · `/hold` · `/release` · `/book` |
+| **seating** | `GET/PUT /seating/auditorium` · `POST /seating/movies/:id/generate` · `GET …/:id/detail` (admin: layout + who booked) · `/seats` · `/hold` · `/release` · `/book` |
 | bookings | create/list/get/cancel · `/bookings/allowance/:movieId` |
 | attendance | `/attendance/verify` · `/attendance/movies/:id/summary` |
 | reports/audit | `/reports/overview` · `/reports/movies/:id` · `/audit-logs` |

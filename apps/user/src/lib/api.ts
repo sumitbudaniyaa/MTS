@@ -18,23 +18,37 @@ api.interceptors.request.use((config) => {
 });
 
 // --- Transparent refresh on 401 ---------------------------------------------
-// A single in-flight refresh is shared by all queued requests to avoid stampedes.
-let refreshing: Promise<string | null> | null = null;
+// ONE in-flight refresh is shared by everything — the 401 interceptor AND the app-load
+// bootstrap (see useAuthBootstrap). Deduping across both paths is essential: on a reload of a
+// protected page the bootstrap and a queued request would otherwise each POST /auth/refresh
+// concurrently, rotating the cookie twice and stranding the browser on an orphaned token.
+export interface RefreshResult {
+  accessToken: string;
+  user: import('@/types').AuthUser;
+}
 
-async function refreshAccessToken(): Promise<string | null> {
+let refreshing: Promise<RefreshResult | null> | null = null;
+
+async function doRefresh(): Promise<RefreshResult | null> {
   try {
-    const res = await axios.post<{ accessToken: string; user: unknown }>(
+    const res = await axios.post<RefreshResult>(
       `${baseURL}/auth/refresh`,
       {},
       { withCredentials: true },
     );
-    const token = res.data.accessToken;
-    useAuthStore.getState().setToken(token);
-    return token;
+    useAuthStore.getState().setToken(res.data.accessToken);
+    return res.data;
   } catch {
-    useAuthStore.getState().clear();
     return null;
   }
+}
+
+/** Shared, deduped session refresh. Returns the new token + user, or null on failure. */
+export function refreshSession(): Promise<RefreshResult | null> {
+  refreshing ??= doRefresh().finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
 }
 
 api.interceptors.response.use(
@@ -46,14 +60,12 @@ api.interceptors.response.use(
 
     if (status === 401 && original && !original._retried && !isAuthRoute) {
       original._retried = true;
-      refreshing ??= refreshAccessToken().finally(() => {
-        refreshing = null;
-      });
-      const token = await refreshing;
-      if (token) {
-        original.headers.Authorization = `Bearer ${token}`;
+      const result = await refreshSession();
+      if (result) {
+        original.headers.Authorization = `Bearer ${result.accessToken}`;
         return api(original);
       }
+      useAuthStore.getState().clear();
     }
     return Promise.reject(error);
   },

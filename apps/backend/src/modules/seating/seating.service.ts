@@ -136,6 +136,94 @@ export async function getMovieSeatMap(
   return { rows, seats: view, openToAll };
 }
 
+// ---- Admin: full movie booking detail -------------------------------------
+
+/**
+ * ADMIN: the complete picture for one movie — the seat layout with, for every booked seat,
+ * WHO booked it (mobile / rank / unit) and whether they've checked in, plus the list of
+ * bookings. Powers the "Details" dialog in the admin Movies table.
+ */
+export async function getMovieAdminDetail(movieId: string) {
+  const movie = await MovieModel.findById(movieId);
+  if (!movie) throw ApiError.notFound('Movie not found');
+
+  const seats = await MovieSeatModel.find({ movie: movieId })
+    .sort('row number')
+    .populate({
+      path: 'bookedBy',
+      select: 'mobile rank unit',
+      populate: { path: 'unit', select: 'name' },
+    });
+
+  const bookings = await BookingModel.find({ movie: movieId })
+    .populate('user', 'mobile rank')
+    .populate('unit', 'name')
+    .sort('-createdAt');
+
+  // ticketCode -> ticket status, so each seat can show checked-in / cancelled state.
+  const ticketByCode = new Map<string, { status: string; checkedIn: boolean }>();
+  for (const b of bookings) {
+    for (const t of b.tickets) {
+      if (t.code) ticketByCode.set(t.code, { status: t.status, checkedIn: t.checkedIn });
+    }
+  }
+
+  const rows = [...new Set(seats.map((s) => s.row))];
+  const seatViews = seats.map((s) => {
+    const booker = s.bookedBy as unknown as
+      | { mobile?: string; rank?: string; unit?: { name?: string } }
+      | null;
+    const t = s.ticketCode ? ticketByCode.get(s.ticketCode) : undefined;
+    return {
+      label: s.label,
+      row: s.row,
+      number: s.number,
+      status: s.status as 'FREE' | 'HELD' | 'BOOKED',
+      allowedRanks: s.allowedRanks as string[],
+      ticketCode: s.ticketCode ?? null,
+      checkedIn: t?.checkedIn ?? false,
+      bookedBy: booker
+        ? { mobile: booker.mobile ?? '', rank: booker.rank ?? null, unit: booker.unit?.name ?? null }
+        : null,
+    };
+  });
+
+  const bookingList = bookings.map((b) => {
+    const u = b.user as unknown as { mobile?: string; rank?: string } | null;
+    const unit = b.unit as unknown as { name?: string } | null;
+    return {
+      id: b.id,
+      mobile: u?.mobile ?? '',
+      rank: u?.rank ?? null,
+      unit: unit?.name ?? null,
+      cancelled: Boolean(b.cancelledAt),
+      createdAt: (b as unknown as { createdAt: Date }).createdAt,
+      tickets: b.tickets.map((t) => ({
+        seatLabel: t.seatLabel ?? null,
+        status: t.status,
+        checkedIn: t.checkedIn,
+      })),
+    };
+  });
+
+  return {
+    movie: {
+      id: movie.id,
+      title: movie.title,
+      startTime: movie.startTime,
+      durationMinutes: movie.durationMinutes,
+      endTime: movieEndTime(movie),
+      status: movie.status,
+      totalSeats: movie.totalSeats,
+      seatsBooked: movie.seatsBooked,
+      openToAll: movie.openToAll,
+    },
+    rows,
+    seats: seatViews,
+    bookings: bookingList,
+  };
+}
+
 // ---- Holds ----------------------------------------------------------------
 
 async function assertBookableMovie(movieId: string) {

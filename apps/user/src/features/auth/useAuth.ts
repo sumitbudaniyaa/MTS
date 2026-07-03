@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { api } from '@/lib/api';
+import { api, refreshSession } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
 import type { AuthUser } from '@/types';
 
@@ -8,22 +8,23 @@ interface AuthResponse {
   user: AuthUser;
 }
 
-/** Silent re-auth on load using the HttpOnly refresh cookie. */
+/**
+ * Silent re-auth on load using the HttpOnly refresh cookie. Goes through the SHARED
+ * `refreshSession()` so it can never race the 401 interceptor's refresh (which would rotate
+ * the cookie twice and log the user out on the next reload).
+ */
 export function useAuthBootstrap(): void {
   const { status, setAuth, setStatus } = useAuthStore();
   useEffect(() => {
     if (status !== 'idle') return;
     setStatus('authenticating');
-    api
-      .post<AuthResponse>('/auth/refresh')
-      .then((res) => {
-        if (res.data.user.role !== 'USER') {
-          useAuthStore.getState().clear();
-          return;
-        }
-        setAuth(res.data.user, res.data.accessToken);
-      })
-      .catch(() => useAuthStore.getState().clear());
+    void refreshSession().then((result) => {
+      if (result && result.user.role === 'USER') {
+        setAuth(result.user, result.accessToken);
+      } else {
+        useAuthStore.getState().clear();
+      }
+    });
   }, [status, setAuth, setStatus]);
 }
 

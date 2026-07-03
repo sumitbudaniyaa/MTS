@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil } from 'lucide-react';
+import { Plus, Trash2, Pencil, Eye } from 'lucide-react';
 import { api, apiErrorMessage } from '@/lib/api';
 import type { Movie, MovieStatus, Paginated } from '@/types';
 import { PageHeader, Badge, LoadingState, EmptyState, ErrorState } from '@/components/ui/Misc';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal, ConfirmDialog } from '@/components/ui/Modal';
 import { Table, Th, Td, Pagination } from '@/components/ui/Table';
+import { cn } from '@/lib/cn';
 
 const statusTone: Record<MovieStatus, 'neutral' | 'accent' | 'success' | 'warning' | 'danger'> = {
   DRAFT: 'neutral',
@@ -42,6 +43,7 @@ export function MoviesPage() {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Movie | null>(null);
   const [deleting, setDeleting] = useState<Movie | null>(null);
+  const [viewing, setViewing] = useState<Movie | null>(null);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['movies', page],
@@ -114,6 +116,14 @@ export function MoviesPage() {
                   <div className="flex justify-end gap-1">
                     <Button
                       size="sm"
+                      variant="ghost"
+                      onClick={() => setViewing(m)}
+                      title="View layout, booked seats & who booked them"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="sm"
                       variant="secondary"
                       loading={openAll.isPending && openAll.variables?.id === m.id}
                       onClick={() => openAll.mutate({ id: m.id, open: !m.openToAll })}
@@ -162,6 +172,8 @@ export function MoviesPage() {
           }}
         />
       )}
+
+      {viewing && <MovieDetailModal movie={viewing} onClose={() => setViewing(null)} />}
 
       <ConfirmDialog
         open={!!deleting}
@@ -439,5 +451,244 @@ function EditMovieModal({
       />
       <p className="text-xs text-muted">Editing is locked once booking opens (1 hour before showtime).</p>
     </Modal>
+  );
+}
+
+// ---- Movie detail: layout + who booked what --------------------------------
+
+interface DetailSeat {
+  label: string;
+  row: string;
+  number: number;
+  status: 'FREE' | 'HELD' | 'BOOKED';
+  allowedRanks: string[];
+  ticketCode: string | null;
+  checkedIn: boolean;
+  bookedBy: { mobile: string; rank: string | null; unit: string | null } | null;
+}
+interface DetailBooking {
+  id: string;
+  mobile: string;
+  rank: string | null;
+  unit: string | null;
+  cancelled: boolean;
+  createdAt: string;
+  tickets: { seatLabel: string | null; status: string; checkedIn: boolean }[];
+}
+interface MovieDetail {
+  movie: {
+    id: string;
+    title: string;
+    startTime: string;
+    durationMinutes?: number;
+    endTime: string;
+    status: MovieStatus;
+    totalSeats: number;
+    seatsBooked: number;
+    openToAll?: boolean;
+  };
+  rows: string[];
+  seats: DetailSeat[];
+  bookings: DetailBooking[];
+}
+
+function MovieDetailModal({ movie, onClose }: { movie: Movie; onClose: () => void }) {
+  const [selected, setSelected] = useState<DetailSeat | null>(null);
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ['movie-detail', movie.id],
+    queryFn: async () =>
+      (await api.get<MovieDetail>(`/seating/movies/${movie.id}/detail`)).data,
+  });
+
+  const grouped = (() => {
+    if (!data) return [] as { row: string; seats: DetailSeat[] }[];
+    const map = new Map<string, DetailSeat[]>();
+    data.seats.forEach((s) => {
+      if (!map.has(s.row)) map.set(s.row, []);
+      map.get(s.row)!.push(s);
+    });
+    return [...map.entries()].map(([row, seats]) => ({
+      row,
+      seats: seats.sort((a, b) => a.number - b.number),
+    }));
+  })();
+
+  const booked = data?.seats.filter((s) => s.status === 'BOOKED').length ?? 0;
+  const checkedIn = data?.seats.filter((s) => s.checkedIn).length ?? 0;
+  const held = data?.seats.filter((s) => s.status === 'HELD').length ?? 0;
+
+  return (
+    <Modal open onClose={onClose} title={movie.title} size="xl">
+      {isLoading && <LoadingState />}
+      {isError && <ErrorState message={apiErrorMessage(error)} />}
+      {data && (
+        <div className="space-y-5">
+          {/* summary */}
+          <div className="flex flex-wrap gap-2 text-xs">
+            <Badge tone={statusTone[data.movie.status]}>{data.movie.status}</Badge>
+            {data.movie.openToAll && <Badge tone="success">All ranks</Badge>}
+            <Badge tone="accent">
+              {booked}/{data.movie.totalSeats} booked
+            </Badge>
+            <Badge tone="success">{checkedIn} checked in</Badge>
+            {held > 0 && <Badge tone="warning">{held} on hold</Badge>}
+            <span className="text-muted">
+              {fmt(data.movie.startTime)} → {fmt(data.movie.endTime)}
+            </span>
+          </div>
+
+          {/* legend */}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted">
+            <LegendDot cls="border border-border bg-surface" label="Free" />
+            <LegendDot cls="bg-accent" label="Booked" />
+            <LegendDot cls="bg-success" label="Checked in" />
+            <LegendDot cls="bg-warning" label="On hold" />
+          </div>
+
+          {/* layout */}
+          {data.seats.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted">No seats generated for this movie.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <div className="mx-auto w-max">
+                <div className="mb-4">
+                  <div className="h-1.5 rounded-full bg-fg/70" />
+                  <p className="mt-1 text-center text-[10px] uppercase tracking-widest text-muted">
+                    Screen
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  {grouped.map(({ row, seats }) => (
+                    <div key={row} className="flex items-center justify-center gap-1.5">
+                      <span className="w-4 shrink-0 text-center text-[10px] font-medium text-muted">
+                        {row}
+                      </span>
+                      <div className="flex gap-1">
+                        {seats.map((s) => {
+                          const tone =
+                            s.checkedIn
+                              ? 'bg-success text-white'
+                              : s.status === 'BOOKED'
+                                ? 'bg-accent text-white'
+                                : s.status === 'HELD'
+                                  ? 'bg-warning text-white'
+                                  : 'border border-border bg-surface text-fg';
+                          const isSel = selected?.label === s.label;
+                          return (
+                            <button
+                              key={s.label}
+                              onClick={() => setSelected(s)}
+                              title={
+                                s.bookedBy
+                                  ? `${s.label} · ${s.bookedBy.mobile}${s.bookedBy.rank ? ` (${s.bookedBy.rank})` : ''}`
+                                  : s.label
+                              }
+                              className={cn(
+                                'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[9px] font-medium transition',
+                                tone,
+                                isSel && 'ring-2 ring-fg ring-offset-1 ring-offset-surface',
+                              )}
+                            >
+                              {s.number}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* selected seat detail */}
+          {selected && (
+            <div className="rounded-lg border border-border bg-surface-2 p-3 text-sm">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="font-semibold">Seat {selected.label}</span>
+                <Badge
+                  tone={
+                    selected.checkedIn
+                      ? 'success'
+                      : selected.status === 'BOOKED'
+                        ? 'accent'
+                        : selected.status === 'HELD'
+                          ? 'warning'
+                          : 'neutral'
+                  }
+                >
+                  {selected.checkedIn ? 'CHECKED IN' : selected.status}
+                </Badge>
+              </div>
+              {selected.bookedBy ? (
+                <div className="text-muted">
+                  Booked by <span className="font-medium text-fg">{selected.bookedBy.mobile}</span>
+                  {selected.bookedBy.rank && ` · ${selected.bookedBy.rank}`}
+                  {selected.bookedBy.unit && ` · ${selected.bookedBy.unit}`}
+                </div>
+              ) : (
+                <div className="text-muted">
+                  {selected.status === 'FREE' ? 'Available' : 'On temporary hold'} ·{' '}
+                  {selected.allowedRanks.length ? `Ranks: ${selected.allowedRanks.join('/')}` : 'All ranks'}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* bookings list */}
+          <div>
+            <h3 className="mb-2 text-sm font-semibold">Bookings ({data.bookings.length})</h3>
+            {data.bookings.length === 0 ? (
+              <p className="text-sm text-muted">No bookings yet.</p>
+            ) : (
+              <Table
+                head={
+                  <tr>
+                    <Th>Mobile</Th>
+                    <Th>Rank</Th>
+                    <Th>Unit</Th>
+                    <Th>Seats</Th>
+                    <Th>Booked</Th>
+                  </tr>
+                }
+              >
+                {data.bookings.map((b) => {
+                  const live = b.tickets.filter((t) => t.status === 'BOOKED' || t.status === 'CHECKED_IN');
+                  const seatLabels = live.map((t) => t.seatLabel).filter(Boolean).join(', ');
+                  return (
+                    <tr key={b.id} className={b.cancelled ? 'opacity-50' : undefined}>
+                      <Td className="font-medium">{b.mobile}</Td>
+                      <Td>{b.rank ?? '—'}</Td>
+                      <Td>{b.unit ?? '—'}</Td>
+                      <Td>
+                        {b.cancelled ? (
+                          <span className="text-muted line-through">cancelled</span>
+                        ) : (
+                          seatLabels || '—'
+                        )}
+                        {b.tickets.some((t) => t.checkedIn) && (
+                          <span className="ml-1.5 inline-block">
+                            <Badge tone="success">checked in</Badge>
+                          </span>
+                        )}
+                      </Td>
+                      <Td className="whitespace-nowrap text-muted">{fmt(b.createdAt)}</Td>
+                    </tr>
+                  );
+                })}
+              </Table>
+            )}
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function LegendDot({ cls, label }: { cls: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1">
+      <span className={cn('h-3 w-3 rounded', cls)} /> {label}
+    </span>
   );
 }

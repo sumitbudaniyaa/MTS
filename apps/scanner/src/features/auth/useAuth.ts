@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { api } from '@/lib/api';
+import { api, refreshSession } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
 import type { AuthUser } from '@/types';
 
@@ -14,16 +14,13 @@ export function useAuthBootstrap(): void {
   useEffect(() => {
     if (status !== 'idle') return;
     setStatus('authenticating');
-    api
-      .post<AuthResponse>('/auth/refresh')
-      .then((res) => {
-        if (res.data.user.role !== 'SCANNER') {
-          useAuthStore.getState().clear();
-          return;
-        }
-        setAuth(res.data.user, res.data.accessToken);
-      })
-      .catch(() => useAuthStore.getState().clear());
+    void refreshSession().then((result) => {
+      if (result && result.user.role === 'SCANNER') {
+        setAuth(result.user, result.accessToken);
+      } else {
+        useAuthStore.getState().clear();
+      }
+    });
   }, [status, setAuth, setStatus]);
 }
 

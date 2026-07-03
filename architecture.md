@@ -206,7 +206,10 @@ Notable post-build changes folded in:
 - **Movie duration / booking window**: movies carry `durationMinutes`; booking stays open until
   the show's end time. **No-shows** (unscanned 15 min after start) are expired and their seats
   **freed live** so walk-ins can re-book mid-show.
-- **Refresh-rotation race grace** (30s) + no StrictMode in web apps → no logout on reload.
+- **Refresh-rotation race grace** + no StrictMode in web apps → no logout on reload. The 401
+  interceptor **and** the app-load bootstrap now share **one deduped `refreshSession()`**, so a
+  protected-page reload can't fire two concurrent `/auth/refresh` calls (which rotated the cookie
+  twice and stranded the browser on an orphaned token — the user-app logout-on-refresh bug).
 - **Spouse dual-credential login** (shared family account, same password).
 - **Personnel ranks** (Officer/JCO/JAWAN); **unit `code`/`description` removed**.
 - **Movie lifecycle**: edit/delete locked once booking opens (`start − 1h`); single datetime.
@@ -221,7 +224,10 @@ Notable post-build changes folded in:
       (rank / marital / spouse / kids / active / reset password) and **bulk personnel import
       from an Excel/CSV upload** (parsed client-side via SheetJS → `POST /personnel/bulk`,
       per-row error report + downloadable template), **movie editing** (locked once booking
-      opens) and a per-movie **"Open to all ranks"** toggle.
+      opens) and a per-movie **"Open to all ranks"** toggle, plus a per-movie **Details dialog**
+      (eye icon in the Movies table) showing the **seat layout with who booked each seat**
+      (mobile / rank / unit), checked-in state, and the full bookings list (`GET
+      /seating/movies/:id/detail`).
 - User app: browsable without login, **bottom-drawer login**, **profile page**, District-style
       movie cards, **floating pill nav**, seat-map booking (rapid double-taps de-duped via an
       in-flight guard). Movies shown early with **`bookingOpen`** flag; user sees "Booking opens
@@ -239,6 +245,7 @@ Deploy: PM2 `ecosystem.config.cjs` (cluster mode) for the API; apps served by an
 - `seat-allocations` (legacy quota, PUT/GET per movie)
 - **`seating`**: `GET/PUT /seating/auditorium` · `POST /seating/movies/:id/generate` (ADMIN) ·
   `PATCH /seating/movies/:id/open-to-all` (ADMIN) ·
+  `GET /seating/movies/:id/detail` (ADMIN — layout + per-seat booker + bookings list) ·
   `GET /seating/movies/:id/seats` · `POST …/hold` · `…/release` · `…/book` (USER)
 - `bookings` (create/list/get/cancel + `/bookings/allowance/:movieId`, USER)
 - `attendance/verify` (SCANNER) + `/attendance/movies/:id/summary`

@@ -37,6 +37,14 @@ seatingRouter.post(
   ctrl.setOpenToAll,
 );
 
+// ---- Admin movie booking detail (layout + who booked what) ----
+seatingRouter.get(
+  '/movies/:movieId/detail',
+  authorize(Roles.ADMIN),
+  validate({ params: movieIdParamSchema }),
+  ctrl.getMovieDetail,
+);
+
 // ---- Seat map + booking (USER; admin may read the map) ----
 seatingRouter.get(
   '/movies/:movieId/seats',
