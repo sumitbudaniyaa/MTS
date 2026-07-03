@@ -181,6 +181,7 @@ interface MovieForm {
   title: string;
   description?: string;
   startTime: string;
+  durationMinutes: number;
 }
 
 function MovieFormModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
@@ -219,6 +220,7 @@ function MovieFormModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
         description: v.description || undefined,
         poster: poster || undefined,
         startTime: new Date(v.startTime).toISOString(),
+        durationMinutes: Number(v.durationMinutes) || 180,
       }),
     onSuccess: () => {
       toast.success('Movie created');
@@ -288,6 +290,21 @@ function MovieFormModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
         {...register('startTime', { required: 'Required' })}
       />
 
+      <Input
+        label="Duration (minutes)"
+        type="number"
+        inputMode="numeric"
+        defaultValue={180}
+        error={errors.durationMinutes?.message}
+        {...register('durationMinutes', {
+          valueAsNumber: true,
+          min: { value: 1, message: 'Must be at least 1 minute' },
+        })}
+      />
+      <p className="-mt-1 text-xs text-muted">
+        Booking stays open until the show ends (start + duration).
+      </p>
+
       {/* Total seats are fixed by the auditorium layout */}
       <div className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm">
         {totalSeats > 0 ? (
@@ -307,6 +324,7 @@ interface EditMovieForm {
   title: string;
   description?: string;
   startTime: string;
+  durationMinutes: number;
   status: MovieStatus;
 }
 
@@ -328,6 +346,7 @@ function EditMovieModal({
       title: movie.title,
       description: movie.description,
       startTime: toLocalInput(movie.startTime),
+      durationMinutes: movie.durationMinutes ?? 180,
       status: movie.status,
     },
   });
@@ -351,6 +370,7 @@ function EditMovieModal({
         description: v.description ?? '',
         poster,
         startTime: new Date(v.startTime).toISOString(),
+        durationMinutes: Number(v.durationMinutes) || 180,
         status: v.status,
       }),
     onSuccess: () => {
@@ -406,6 +426,16 @@ function EditMovieModal({
         type="datetime-local"
         error={errors.startTime?.message}
         {...register('startTime', { required: 'Required' })}
+      />
+      <Input
+        label="Duration (minutes)"
+        type="number"
+        inputMode="numeric"
+        error={errors.durationMinutes?.message}
+        {...register('durationMinutes', {
+          valueAsNumber: true,
+          min: { value: 1, message: 'Must be at least 1 minute' },
+        })}
       />
       <p className="text-xs text-muted">Editing is locked once booking opens (1 hour before showtime).</p>
     </Modal>

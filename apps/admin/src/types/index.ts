@@ -56,6 +56,7 @@ export interface Movie {
   poster: string;
   showDate: string;
   startTime: string;
+  durationMinutes?: number;
   totalSeats: number;
   seatsBooked: number;
   poolSeats: number;

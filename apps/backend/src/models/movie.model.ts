@@ -20,6 +20,9 @@ const movieSchema = new Schema(
 
     showDate: { type: Date, required: true },
     startTime: { type: Date, required: true, index: true },
+    // Show length in minutes; endTime = startTime + durationMinutes. Booking stays open (and
+    // the movie stays listed) until the end time.
+    durationMinutes: { type: Number, default: 180, min: 1 },
 
     totalSeats: { type: Number, required: true, min: 1 },
     seatsBooked: { type: Number, default: 0, min: 0 }, // issued seats (quota + pool)
@@ -50,11 +53,23 @@ applyBaseTransforms(movieSchema);
 
 export const MovieModel = model('Movie', movieSchema);
 
-/** True once the visibility window (startTime - VISIBILITY_LEAD_MINUTES) has opened. */
+/** When the show ends: startTime + durationMinutes (defaults to 180 min if unset). */
+export function movieEndTime(
+  movie: Pick<Movie, 'startTime' | 'durationMinutes'>,
+): Date {
+  const mins = movie.durationMinutes ?? 180;
+  return new Date(movie.startTime.getTime() + mins * 60_000);
+}
+
+/**
+ * True while booking is open: from `startTime - VISIBILITY_LEAD_MINUTES` until the show's end
+ * time. Movies are listed to users earlier than this, but seats are only bookable in-window.
+ */
 export function isMovieVisible(
-  movie: Pick<Movie, 'startTime'>,
+  movie: Pick<Movie, 'startTime' | 'durationMinutes'>,
   now: Date = new Date(),
 ): boolean {
   const lead = env.VISIBILITY_LEAD_MINUTES * 60_000;
-  return now.getTime() >= movie.startTime.getTime() - lead;
+  const t = now.getTime();
+  return t >= movie.startTime.getTime() - lead && t < movieEndTime(movie).getTime();
 }

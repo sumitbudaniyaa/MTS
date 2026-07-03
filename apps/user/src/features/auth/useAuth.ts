@@ -28,7 +28,7 @@ export function useAuthBootstrap(): void {
 }
 
 export async function login(mobile: string, password: string): Promise<AuthUser> {
-  const res = await api.post<AuthResponse>('/auth/login', { mobile, password });
+  const res = await api.post<AuthResponse>('/auth/login', { mobile, password, role: 'USER' });
   if (res.data.user.role !== 'USER') {
     throw new Error('This app is for service members only');
   }

@@ -28,7 +28,7 @@ export function useAuthBootstrap(): void {
 }
 
 export async function login(mobile: string, password: string): Promise<AuthUser> {
-  const res = await api.post<AuthResponse>('/auth/login', { mobile, password });
+  const res = await api.post<AuthResponse>('/auth/login', { mobile, password, role: 'SCANNER' });
   if (res.data.user.role !== 'SCANNER') {
     throw new Error('This app is for scanner operators only');
   }

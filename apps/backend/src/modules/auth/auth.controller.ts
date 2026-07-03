@@ -30,8 +30,8 @@ function clearRefreshCookie(res: Response): void {
 }
 
 export const loginController = asyncHandler(async (req: Request, res: Response) => {
-  const { mobile, password } = req.body as LoginInput;
-  const result = await login(mobile, password, req);
+  const { mobile, password, role } = req.body as LoginInput;
+  const result = await login(mobile, password, req, role);
   setRefreshCookie(res, result.refresh);
   await recordAudit({
     action: AuditAction.LOGIN,

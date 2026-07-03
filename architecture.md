@@ -64,7 +64,7 @@ src/
 | `admins`          | Admin accounts (separate collection) | `mobile`, `passwordHash`, `role` (fixed ADMIN), `name`, `active` |
 | `scanners`        | Scanner/operator accounts (separate collection) | `mobile`, `passwordHash`, `role` (fixed SCANNER), `active` |
 | `users`           | Personnel accounts only | `mobile`, `passwordHash`, `role` (fixed USER), `unit`, `rank` (OFFICER\|JCO\|JAWAN), `maritalStatus`, `spouseMobile`, `numberOfKids`, `familySize` (derived) |
-| `movies`          | Shows | `title`, `description`, `poster` (URL or base64), `showDate`, `startTime`, `totalSeats`, `status`, `openToAll` (rank bypass) |
+| `movies`          | Shows | `title`, `description`, `poster` (URL or base64), `showDate`, `startTime`, `durationMinutes` (endTime = start + duration), `totalSeats`, `status`, `openToAll` (rank bypass) |
 | `auditoria`       | Physical venue layout (singleton) | `name`, `rows[]` → `{ label, seats[] → { number, allowedRanks[] } }` |
 | `movieseats`      | Per-movie seat inventory | `movie`, `row`, `number`, `label`, `allowedRanks[]`, `status` (FREE\|HELD\|BOOKED), `heldBy`, `holdExpiresAt`, `bookedBy`, `booking`, `ticketCode` |
 | `seatallocations` | Legacy per-unit quota (superseded by seats; endpoints retained) | `movie`, `unit`, `allocated`, `booked`, `released` |
@@ -74,10 +74,13 @@ src/
 | `refreshtokens`   | Rotating refresh tokens | `user`, `role`, `tokenHash`, `family`, `expiresAt`, `revokedAt`, `replacedBy` |
 
 Accounts are physically separated into three collections by role. The `account.service.ts`
-provides cross-collection lookups (by mobile for login, by id+role for token refresh).
-`mobile` uniqueness is enforced globally across all three collections, **including spouse
-mobiles**. A married member's spouse logs in with their own `spouseMobile` + the member's
-password and resolves to the **same** family account (shared tickets/quota).
+resolves accounts by mobile (scoped to the app's `role` on login) and by id+role (token
+refresh). `mobile` uniqueness is **per-collection**: the same number may exist independently
+as an admin, a scanner **and** a user, so one person can be all three (e.g. a scanner who is
+also a member). Within the `users` collection a spouse's `spouseMobile` also counts as taken.
+Each app passes its `role` on `POST /auth/login` so the lookup hits the correct collection.
+A married member's spouse logs in with their own `spouseMobile` + the member's password and
+resolves to the **same** family account (shared tickets/quota).
 
 `familySize = 1 + (married ? 1 : 0) + numberOfKids`, **always** recomputed server-side on
 write; the client-supplied value is ignored.
@@ -122,8 +125,10 @@ still prevent oversell). Use a replica set / Atlas in production for full atomic
 
 ### 3.7 Scheduled Jobs (node-cron)
 - **Open-pool release:** at `movie.startTime`, move each unit's unbooked quota into `poolSeats`.
-- **No-show expiry:** at `startTime + 15min`, BOOKED & not-checked-in tickets → `EXPIRED`,
-  seats released to pool.
+- **No-show expiry:** at `startTime + NO_SHOW_GRACE_MINUTES` (15), BOOKED & not-checked-in
+  tickets → `EXPIRED` and their **`MovieSeat` rows are freed (BOOKED → FREE) and broadcast
+  live** — since the movie stays bookable until its end time, walk-ins can immediately re-grab
+  those seats. One-shot per movie (guarded by `noShowProcessedAt`).
 - **Seat-hold expiry (every 20s):** `MovieSeat` rows whose 2-minute hold elapsed → `FREE`,
   broadcast live (see §3.10).
 Jobs are idempotent (safe to re-run); a missed tick reconciles on the next run.
@@ -145,9 +150,13 @@ Jobs are idempotent (safe to re-run); a missed tick reconciles on the next run.
   atomic, so two users can never claim the same seat. Booking creates the usual Booking +
   QR tickets (each carrying `seatLabel`). Idempotent on `(user, idempotencyKey)`.
 - **Cancellation** frees the booked seats (BOOKED → FREE) and broadcasts the change live.
+- **Booking window:** each movie has a `durationMinutes` (admin-set, default 180); its end
+  time is `startTime + durationMinutes`. Movies are **shown to users early** (any upcoming
+  show) but seats are only bookable **from `VISIBILITY_LEAD` min before start until the show's
+  end time** (`isMovieVisible` / `bookingOpen` flag). Combined with no-show freeing, seats that
+  open up mid-show remain claimable until the end.
 - **Admin `openToAll`** per movie: when set, any rank may book any seat (free-for-all),
-  ignoring per-seat rank restrictions. Movies are **shown to users early** (any upcoming
-  show) but **booking only opens `VISIBILITY_LEAD` min before start** (`bookingOpen` flag).
+  ignoring per-seat rank restrictions.
 - **Real-time:** a **socket.io** gateway (`realtime/gateway.ts`) attached to the HTTP server;
   clients join room `movie:<id>` and receive `seats:update` events on every hold / release /
   book / expiry, so all viewers see live availability.
@@ -191,8 +200,12 @@ audit, reports, admins) + cron jobs + socket.io + security pipeline. Admin Porta
 Scanner app done. **Docker removed** — deploy via PM2 + Atlas (or a local replica-set mongod).
 
 Notable post-build changes folded in:
-- **Account collections split** (`admins`/`scanners`/`users`); cross-collection auth via
-  `account.service.ts`; refresh tokens carry `role`; audit uses polymorphic `refPath`.
+- **Account collections split** (`admins`/`scanners`/`users`) with **per-collection mobile
+  uniqueness** — the same mobile can be an admin, scanner **and** user; login is **role-scoped**
+  (each app sends its `role`). Refresh tokens carry `role`; audit uses polymorphic `refPath`.
+- **Movie duration / booking window**: movies carry `durationMinutes`; booking stays open until
+  the show's end time. **No-shows** (unscanned 15 min after start) are expired and their seats
+  **freed live** so walk-ins can re-book mid-show.
 - **Refresh-rotation race grace** (30s) + no StrictMode in web apps → no logout on reload.
 - **Spouse dual-credential login** (shared family account, same password).
 - **Personnel ranks** (Officer/JCO/JAWAN); **unit `code`/`description` removed**.
@@ -210,8 +223,9 @@ Notable post-build changes folded in:
       per-row error report + downloadable template), **movie editing** (locked once booking
       opens) and a per-movie **"Open to all ranks"** toggle.
 - User app: browsable without login, **bottom-drawer login**, **profile page**, District-style
-      movie cards, **floating pill nav**, seat-map booking. Movies shown early with
-      **`bookingOpen`** flag; user sees "Booking opens at …" when not yet bookable.
+      movie cards, **floating pill nav**, seat-map booking (rapid double-taps de-duped via an
+      in-flight guard). Movies shown early with **`bookingOpen`** flag; user sees "Booking opens
+      at …" when not yet bookable, and the movie stays listed/bookable until its end time.
 - Per-movie **`openToAll`** admin toggle bypasses rank-gating on seat booking.
 - Scanner: movie list → live scan → result bar (auto-dismiss 3s), robust camera w/ fallback.
 

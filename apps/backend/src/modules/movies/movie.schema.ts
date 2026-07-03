@@ -34,6 +34,8 @@ export const createMovieSchema = z
     // Optional — defaults to the date part of startTime (single datetime in the UI).
     showDate: z.coerce.date().optional(),
     startTime: z.coerce.date(),
+    // Show length in minutes (booking stays open until startTime + duration).
+    durationMinutes: z.number().int().min(1).max(1440).optional(),
     // Derived from the auditorium layout server-side; not required from the client.
     totalSeats: z.number().int().min(1).max(100000).optional(),
     status: z.enum([MovieStatus.DRAFT, MovieStatus.SCHEDULED]).default(MovieStatus.DRAFT),
@@ -51,6 +53,7 @@ export const updateMovieSchema = z.object({
   poster: posterSchema,
   showDate: z.coerce.date().optional(),
   startTime: z.coerce.date().optional(),
+  durationMinutes: z.number().int().min(1).max(1440).optional(),
   status: z
     .enum([MovieStatus.DRAFT, MovieStatus.SCHEDULED, MovieStatus.CLOSED, MovieStatus.CANCELLED])
     .optional(),

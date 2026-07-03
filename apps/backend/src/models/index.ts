@@ -2,7 +2,7 @@ export { UnitModel, type Unit, type UnitDoc } from './unit.model.js';
 export { UserModel, computeFamilySize, type User, type UserDoc, type UserId } from './user.model.js';
 export { AdminModel, type Admin, type AdminDoc } from './admin.model.js';
 export { ScannerModel, type Scanner, type ScannerDoc } from './scanner.model.js';
-export { MovieModel, isMovieVisible, type Movie, type MovieDoc } from './movie.model.js';
+export { MovieModel, isMovieVisible, movieEndTime, type Movie, type MovieDoc } from './movie.model.js';
 export {
   SeatAllocationModel,
   type SeatAllocation,

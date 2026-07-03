@@ -67,13 +67,14 @@ async function persistRefresh(
   });
 }
 
-/** Authenticate by mobile + password (across all account collections) and issue tokens. */
+/** Authenticate by mobile + password (scoped to the app's role when given) and issue tokens. */
 export async function login(
   mobile: string,
   password: string,
   req?: Request,
+  role?: Role,
 ): Promise<AuthTokens> {
-  const account = await findAccountByMobile(mobile);
+  const account = await findAccountByMobile(mobile, role);
   // Always run a verify to keep timing roughly constant whether or not the account exists.
   const hash = account?.passwordHash ?? '$2a$12$invalidinvalidinvalidinvalidinvalidinvalidinv';
   const ok = await verifyPassword(password, hash);

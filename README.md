@@ -33,10 +33,11 @@ Accounts are physically split into three MongoDB collections:
 | `scanners` | `ScannerModel` | Door-scanner operator accounts |
 | `users`    | `UserModel`    | Personnel (USER) accounts with unit/family fields |
 
-`mobile` uniqueness is enforced globally across all three collections. The
-`account.service.ts` provides cross-collection lookups for login (by mobile) and token
-refresh (by id + role). Audit logs use polymorphic `refPath` to reference actors across
-collections.
+`mobile` uniqueness is **per-collection**, so the same number can hold a separate admin,
+scanner **and** user account (one person may be all three). Each app sends its `role` on
+login, so the lookup is scoped to the right collection (e.g. the scanner app authenticates
+only against `scanners`). Token refresh resolves by id + role. Audit logs use polymorphic
+`refPath` to reference actors across collections.
 
 ## Local development — interactive launcher
 
@@ -112,12 +113,16 @@ Base path `/api/v1`. Full surface in [architecture.md](architecture.md#71-api-su
 ### End-to-end flow
 1. Admin → **Auditorium**: design rows/seats + allowed ranks → Save.
 2. Admin → **Movies**: create a movie (seats are auto-generated from the auditorium; total
-   seats come from the layout). Movies are shown to users early; **booking opens 1 h before**
-   showtime. Optional per-movie **"Open to all ranks"**.
+   seats come from the layout). Set the **duration** — booking stays open until the show's
+   end time (`startTime + duration`). Movies are shown to users early; **booking opens 1 h
+   before** showtime. Optional per-movie **"Open to all ranks"**.
 3. User app → open the movie → pick seats on the **live map** (open two browsers to see
    seats lock in real time) → **Confirm** → QR tickets show the seat label. Cancelling frees
    the seat live.
-4. Scanner app → pick the movie → scan the QR → verified / already-used / invalid.
+4. **No-shows auto-free**: `NO_SHOW_GRACE_MINUTES` (15) after showtime, any booked-but-unscanned
+   ticket is expired and its seat is released back onto the live map — so walk-ins can grab it
+   right up until the show ends.
+5. Scanner app → pick the movie → scan the QR → verified / already-used / invalid.
 
 ## Deployment (free tier: Vercel + Render + Atlas)
 

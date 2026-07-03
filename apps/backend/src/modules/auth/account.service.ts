@@ -54,37 +54,60 @@ function toAccount(doc: AccountDocLike, role: Role): Account {
 }
 
 /**
- * Find an account by mobile across all collections (with password hash). A personnel record
- * matches either its own `mobile` OR its `spouseMobile`; when matched as the spouse, the
- * spouse credential is used and the spouse's mobile is shown, but the account id (and thus
- * the family quota / bookings) is the SAME shared record.
+ * Resolve a USER account by mobile (own `mobile` OR a personnel `spouseMobile`). When matched
+ * as the spouse, the spouse credential is used and the spouse's mobile is shown, but the
+ * account id (and thus the family quota / bookings) is the SAME shared record.
  */
-export async function findAccountByMobile(mobile: string): Promise<Account | null> {
-  const [admin, scanner, user] = await Promise.all([
+async function findUserByMobile(mobile: string): Promise<Account | null> {
+  const user = await UserModel.findOne({
+    $or: [{ mobile }, { spouseMobile: mobile }],
+  }).select('+passwordHash');
+  if (!user) return null;
+  return {
+    id: user.id,
+    mobile, // the identity actually used to log in
+    name: '',
+    role: Roles.USER,
+    unit: user.unit ? String(user.unit) : null,
+    active: user.active,
+    passwordHash: user.passwordHash,
+    touchLogin: async () => {
+      user.lastLoginAt = new Date();
+      await user.save();
+    },
+  };
+}
+
+/**
+ * Find an account by mobile (with password hash). Because the same mobile can now exist
+ * independently as an admin, a scanner AND a user, callers pass the `role` of the app the
+ * person is logging into so the correct collection is used. When `role` is omitted, all
+ * collections are searched (admin > scanner > user) for backwards compatibility.
+ */
+export async function findAccountByMobile(
+  mobile: string,
+  role?: Role,
+): Promise<Account | null> {
+  if (role === Roles.ADMIN) {
+    const admin = await AdminModel.findOne({ mobile }).select('+passwordHash');
+    return admin ? toAccount(admin, Roles.ADMIN) : null;
+  }
+  if (role === Roles.SCANNER) {
+    const scanner = await ScannerModel.findOne({ mobile }).select('+passwordHash');
+    return scanner ? toAccount(scanner, Roles.SCANNER) : null;
+  }
+  if (role === Roles.USER) {
+    return findUserByMobile(mobile);
+  }
+
+  // No role hint — search everything (admin wins, then scanner, then user).
+  const [admin, scanner] = await Promise.all([
     AdminModel.findOne({ mobile }).select('+passwordHash'),
     ScannerModel.findOne({ mobile }).select('+passwordHash'),
-    UserModel.findOne({ $or: [{ mobile }, { spouseMobile: mobile }] }).select('+passwordHash'),
   ]);
   if (admin) return toAccount(admin, Roles.ADMIN);
   if (scanner) return toAccount(scanner, Roles.SCANNER);
-  if (user) {
-    // The spouse signs in with their own mobile but the SAME password as the member, and
-    // resolves to the same family account (shared tickets/quota).
-    return {
-      id: user.id,
-      mobile, // the identity actually used to log in
-      name: '',
-      role: Roles.USER,
-      unit: user.unit ? String(user.unit) : null,
-      active: user.active,
-      passwordHash: user.passwordHash,
-      touchLogin: async () => {
-        user.lastLoginAt = new Date();
-        await user.save();
-      },
-    };
-  }
-  return null;
+  return findUserByMobile(mobile);
 }
 
 /** Find an account by id within the collection implied by its role. */
@@ -125,18 +148,20 @@ export async function setPasswordById(
 }
 
 /**
- * Whether a number is already used as ANY login identity — a primary mobile in any
- * collection, or a personnel spouse mobile. `exceptUserId` skips one user record so a
- * personnel update doesn't clash with itself.
+ * Whether a mobile is already used as a login identity **within the given role's collection**.
+ * Uniqueness is per-collection: the same number may exist as an admin, a scanner AND a user
+ * independently, but not twice inside the same collection. For USER, a personnel `spouseMobile`
+ * also counts as taken; `exceptUserId` skips one user record so a self-update doesn't clash.
  */
-export async function mobileTaken(mobile: string, exceptUserId?: string): Promise<boolean> {
+export async function mobileTaken(
+  mobile: string,
+  role: Role,
+  exceptUserId?: string,
+): Promise<boolean> {
+  if (role === Roles.ADMIN) return Boolean(await AdminModel.exists({ mobile }));
+  if (role === Roles.SCANNER) return Boolean(await ScannerModel.exists({ mobile }));
   const userFilter = exceptUserId
     ? { $or: [{ mobile }, { spouseMobile: mobile }], _id: { $ne: exceptUserId } }
     : { $or: [{ mobile }, { spouseMobile: mobile }] };
-  const [a, s, u] = await Promise.all([
-    AdminModel.exists({ mobile }),
-    ScannerModel.exists({ mobile }),
-    UserModel.exists(userFilter),
-  ]);
-  return Boolean(a || s || u);
+  return Boolean(await UserModel.exists(userFilter));
 }

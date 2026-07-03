@@ -28,7 +28,7 @@ export function useAuthBootstrap(): void {
 }
 
 export async function login(mobile: string, password: string): Promise<AuthUser> {
-  const res = await api.post<AuthResponse>('/auth/login', { mobile, password });
+  const res = await api.post<AuthResponse>('/auth/login', { mobile, password, role: 'ADMIN' });
   if (res.data.user.role !== 'ADMIN') {
     throw new Error('This portal is for administrators only');
   }

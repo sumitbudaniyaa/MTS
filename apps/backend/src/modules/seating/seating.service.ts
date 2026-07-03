@@ -8,6 +8,7 @@ import {
   UserModel,
   countSeats,
   isMovieVisible,
+  movieEndTime,
   type Auditorium,
   type MovieSeatDoc,
 } from '../../models/index.js';
@@ -143,7 +144,13 @@ async function assertBookableMovie(movieId: string) {
   if (!BOOKABLE.includes(movie.status as (typeof BOOKABLE)[number])) {
     throw ApiError.conflict('Movie is not open for booking');
   }
-  if (!isMovieVisible(movie)) throw ApiError.forbidden('Booking has not opened yet');
+  if (!isMovieVisible(movie)) {
+    // Outside the window: either before booking opens, or after the show has ended.
+    if (Date.now() >= movieEndTime(movie).getTime()) {
+      throw ApiError.conflict('Booking is closed — the show has ended');
+    }
+    throw ApiError.forbidden('Booking has not opened yet');
+  }
   return movie;
 }
 

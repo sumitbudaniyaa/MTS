@@ -42,7 +42,7 @@ adminRouter.post(
   validate({ body: createAdminSchema }),
   asyncHandler(async (req, res) => {
     const { mobile, password, name } = req.body as z.infer<typeof createAdminSchema>;
-    if (await mobileTaken(mobile)) {
+    if (await mobileTaken(mobile, Roles.ADMIN)) {
       throw ApiError.conflict('An account with this mobile already exists');
     }
     const admin = await AdminModel.create({

@@ -29,7 +29,8 @@ async function assertUnitExists(unitId: string): Promise<void> {
 }
 
 export async function createPersonnel(input: CreatePersonnelInput): Promise<ManagedDoc> {
-  if (await mobileTaken(input.mobile)) {
+  // Uniqueness is per-collection: only clash with an existing account of the SAME role.
+  if (await mobileTaken(input.mobile, input.role)) {
     throw ApiError.conflict('An account with this mobile already exists');
   }
   const passwordHash = await hashPassword(input.password);
@@ -46,9 +47,9 @@ export async function createPersonnel(input: CreatePersonnelInput): Promise<Mana
   const married = input.maritalStatus === MaritalStatus.MARRIED;
   const spouseMobile = married ? (input.spouseMobile ?? null) : null;
 
-  // The spouse mobile must be a free login identity too (spouse logs in with the same
-  // password as the member but their own mobile).
-  if (spouseMobile && (await mobileTaken(spouseMobile))) {
+  // The spouse mobile must be a free login identity in the users collection too (spouse logs
+  // in with the same password as the member but their own mobile).
+  if (spouseMobile && (await mobileTaken(spouseMobile, Roles.USER))) {
     throw ApiError.conflict('The spouse mobile is already used by another account');
   }
 
@@ -171,7 +172,7 @@ export async function updatePersonnel(
     if (input.maritalStatus !== undefined) user.maritalStatus = input.maritalStatus;
     if (input.numberOfKids !== undefined) user.numberOfKids = input.numberOfKids;
     if (input.spouseMobile !== undefined) {
-      if (input.spouseMobile && (await mobileTaken(input.spouseMobile, user.id))) {
+      if (input.spouseMobile && (await mobileTaken(input.spouseMobile, Roles.USER, user.id))) {
         throw ApiError.conflict('The spouse mobile is already used by another account');
       }
       user.spouseMobile = input.spouseMobile;

@@ -4,6 +4,7 @@ import {
   MovieModel,
   countSeats,
   isMovieVisible,
+  movieEndTime,
   type MovieDoc,
 } from '../../models/index.js';
 import { ApiError } from '../../utils/apiError.js';
@@ -29,6 +30,7 @@ export async function createMovie(input: CreateMovieInput): Promise<MovieDoc> {
     // Single datetime in the UI — derive the show date from startTime when not supplied.
     showDate: input.showDate ?? input.startTime,
     startTime: input.startTime,
+    durationMinutes: input.durationMinutes ?? 180,
     totalSeats,
     status: input.status,
   });
@@ -102,14 +104,14 @@ export async function deleteMovie(id: string): Promise<void> {
  * included.
  */
 export async function listVisibleMovies(now: Date = new Date()): Promise<MovieDoc[]> {
-  const grace = env.NO_SHOW_GRACE_MINUTES * 60_000;
-  // Still relevant until startTime + grace; otherwise show everything upcoming.
-  const stillOpenAfter = new Date(now.getTime() - grace);
-
-  return MovieModel.find({
+  // Fetch upcoming + recently-started shows, then keep any whose end time is still in the
+  // future (a movie stays listed and bookable right up to when the show ends).
+  const dayAgo = new Date(now.getTime() - 24 * 60 * 60_000);
+  const candidates = await MovieModel.find({
     status: { $in: [MovieStatus.SCHEDULED, MovieStatus.OPEN, MovieStatus.POOL_RELEASED] },
-    startTime: { $gte: stillOpenAfter },
+    startTime: { $gte: dayAgo },
   }).sort('startTime');
+  return candidates.filter((m) => now.getTime() < movieEndTime(m).getTime());
 }
 
 /**
@@ -153,9 +155,11 @@ export function toPublicMovie(movie: MovieDoc) {
     poster: movie.poster,
     showDate: movie.showDate,
     startTime: movie.startTime,
+    durationMinutes: movie.durationMinutes,
+    endTime: movieEndTime(movie),
     availableSeats,
     soldOut: availableSeats <= 0,
-    // Booking only opens VISIBILITY_LEAD minutes before showtime.
+    // Booking only opens VISIBILITY_LEAD minutes before showtime, and closes at the end time.
     bookingOpen: isMovieVisible(movie),
   };
 }
