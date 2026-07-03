@@ -39,6 +39,8 @@ export function SeatPickerPage() {
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [booking, setBooking] = useState(false);
   const idemRef = useRef<string>(crypto.randomUUID());
+  // Seats with an in-flight hold/release — blocks rapid double-taps from firing twice.
+  const pendingRef = useRef<Set<string>>(new Set());
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['seatmap', movieId],
@@ -91,6 +93,9 @@ export function SeatPickerPage() {
   const statusOf = (s: SeatView): Status => live[s.label] ?? s.status;
 
   async function toggle(seat: SeatView) {
+    // Ignore repeat taps on a seat that already has a hold/release in flight.
+    if (pendingRef.current.has(seat.label)) return;
+    pendingRef.current.add(seat.label);
     const isSelected = selected.includes(seat.label);
     try {
       if (isSelected) {
@@ -98,12 +103,14 @@ export function SeatPickerPage() {
         setSelected((sel) => sel.filter((l) => l !== seat.label));
       } else {
         await api.post(`/seating/movies/${movieId}/hold`, { labels: [seat.label] });
-        setSelected((sel) => [...sel, seat.label]);
+        setSelected((sel) => (sel.includes(seat.label) ? sel : [...sel, seat.label]));
         setSecondsLeft(HOLD_SECONDS); // hold (re)extended to 2 min
       }
     } catch (err) {
       toast.error(apiErrorMessage(err, 'Seat no longer available'));
       void refetch();
+    } finally {
+      pendingRef.current.delete(seat.label);
     }
   }
 
