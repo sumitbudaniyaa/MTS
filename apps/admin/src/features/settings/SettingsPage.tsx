@@ -10,22 +10,29 @@ import { PasswordInput } from '@/components/ui/PasswordInput';
 import { Modal, ConfirmDialog } from '@/components/ui/Modal';
 import { onlyDigits10 } from '@/lib/mobile';
 import { useAuthStore } from '@/stores/auth.store';
+import { useRole } from '@/lib/role';
 
 interface AdminRow {
   id: string;
   mobile: string;
   name: string;
+  role?: 'SUPER_ADMIN' | 'ADMIN';
   active: boolean;
   createdAt: string;
 }
 
 export function SettingsPage() {
+  const { canManageAdmins } = useRole();
   return (
     <div className="max-w-3xl">
-      <PageHeader title="Settings" subtitle="Your account & administrators" />
+      <PageHeader
+        title="Settings"
+        subtitle={canManageAdmins ? 'Your account & administrators' : 'Your account'}
+      />
       <div className="space-y-6">
         <MyAccountCard />
-        <AdminsCard />
+        {/* Managing admin accounts is a super-admin-only capability. */}
+        {canManageAdmins && <AdminsCard />}
       </div>
     </div>
   );
@@ -152,6 +159,9 @@ function AdminsCard() {
             <div>
               <div className="flex items-center gap-2 text-sm font-medium">
                 {a.name || 'Administrator'}
+                <Badge tone={a.role === 'SUPER_ADMIN' ? 'success' : 'neutral'}>
+                  {a.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'}
+                </Badge>
                 {a.id === me?.id && <Badge tone="accent">You</Badge>}
                 {!a.active && <Badge tone="neutral">Inactive</Badge>}
               </div>
@@ -212,9 +222,10 @@ function CreateAdminDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
   const [mobile, setMobile] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
+  const [role, setRole] = useState<'ADMIN' | 'SUPER_ADMIN'>('ADMIN');
 
   const save = useMutation({
-    mutationFn: () => api.post('/admins', { mobile, name: name || undefined, password }),
+    mutationFn: () => api.post('/admins', { mobile, name: name || undefined, password, role }),
     onSuccess: () => {
       toast.success('Administrator added');
       onSaved();
@@ -222,7 +233,7 @@ function CreateAdminDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
     onError: (e) => toast.error(apiErrorMessage(e)),
   });
 
-  const valid = /^\d{10}$/.test(mobile) && password.length >= 6;
+  const valid = /^\d{10}$/.test(mobile) && password.length >= 8;
 
   return (
     <Modal
@@ -253,10 +264,14 @@ function CreateAdminDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
       </div>
       <PasswordInput
         label="Password"
-        placeholder="Min 6 characters"
+        placeholder="Min 8 characters"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
       />
+      <Select label="Tier" value={role} onChange={(e) => setRole(e.target.value as 'ADMIN' | 'SUPER_ADMIN')}>
+        <option value="ADMIN">Admin — movies, auditorium & operations</option>
+        <option value="SUPER_ADMIN">Super Admin — units, personnel & admins</option>
+      </Select>
     </Modal>
   );
 }

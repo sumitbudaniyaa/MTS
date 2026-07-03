@@ -22,7 +22,7 @@ attendanceRouter.post(
 // Attendance roll-up — SCANNER or ADMIN.
 attendanceRouter.get(
   '/movies/:movieId/summary',
-  authorize(Roles.SCANNER, Roles.ADMIN),
+  authorize(Roles.SCANNER, Roles.ADMIN, Roles.SUPER_ADMIN),
   validate({ params: movieIdParamSchema }),
   ctrl.attendanceSummary,
 );

@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/Input';
 import { Modal, ConfirmDialog } from '@/components/ui/Modal';
 import { Pagination } from '@/components/ui/Table';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useRole } from '@/lib/role';
 
 interface UnitForm {
   name: string;
@@ -20,6 +21,7 @@ interface UnitForm {
 export function UnitsPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const { canManagePeople } = useRole();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const debounced = useDebounce(search);
@@ -50,11 +52,13 @@ export function UnitsPage() {
     <div>
       <PageHeader
         title="Units"
-        subtitle="Army units and their personnel"
+        subtitle={canManagePeople ? 'Army units and their personnel' : 'Army units and their personnel (read-only)'}
         action={
-          <Button onClick={() => setCreating(true)}>
-            <Plus className="h-4 w-4" /> New unit
-          </Button>
+          canManagePeople ? (
+            <Button onClick={() => setCreating(true)}>
+              <Plus className="h-4 w-4" /> New unit
+            </Button>
+          ) : undefined
         }
       />
 
@@ -102,30 +106,32 @@ export function UnitsPage() {
                     <Users className="h-4 w-4" />
                     <span>View personnel</span>
                   </div>
-                  <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditing(u);
-                      }}
-                      title="Edit"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleting(u);
-                      }}
-                      title="Delete"
-                    >
-                      <Trash2 className="h-4 w-4 text-danger" />
-                    </Button>
-                  </div>
+                  {canManagePeople && (
+                    <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditing(u);
+                        }}
+                        title="Edit"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleting(u);
+                        }}
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4 text-danger" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </Card>
             ))}

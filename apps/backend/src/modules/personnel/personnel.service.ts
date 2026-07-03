@@ -10,6 +10,7 @@ import { ApiError } from '../../utils/apiError.js';
 import { hashPassword } from '../../utils/password.js';
 import { buildMeta, type Paginated } from '../../utils/pagination.js';
 import { mobileTaken } from '../auth/account.service.js';
+import { blindIndex } from '../../utils/fieldCrypto.js';
 import { MaritalStatus, Rank } from '../../constants/enums.js';
 import { Roles, type Role } from '../../types/index.js';
 import type {
@@ -101,13 +102,8 @@ export async function createPersonnelBulk(input: BulkPersonnelInput): Promise<Bu
 }
 
 export async function listPersonnel(query: PersonnelListQuery): Promise<Paginated<ManagedDoc>> {
-  const search = query.search
-    ? {
-        $or: [
-          { mobile: { $regex: query.search, $options: 'i' } },
-        ],
-      }
-    : {};
+  // Mobile is encrypted → exact-match search via its blind index (no substring search).
+  const search = query.search ? { mobileHash: blindIndex(query.search) } : {};
 
   const wantUsers = query.role !== Roles.SCANNER;
   const wantScanners = query.role !== Roles.USER;

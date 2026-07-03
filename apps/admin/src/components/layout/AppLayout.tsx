@@ -16,15 +16,17 @@ import {
 import { useThemeStore } from '@/stores/theme.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { logout } from '@/features/auth/useAuth';
+import { useRole, roleLabel } from '@/lib/role';
 import { cn } from '@/lib/cn';
 
+// `adminOnly` items are hidden from super admins (movie seat allocation is operational-admin only).
 const nav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/units', label: 'Units', icon: Building2 },
   { to: '/scanners', label: 'Scanners', icon: Users },
   { to: '/movies', label: 'Movies', icon: Film },
   { to: '/auditorium', label: 'Auditorium', icon: Grid3x3 },
-  { to: '/allocations', label: 'Seat Allocation', icon: LayoutGrid },
+  { to: '/allocations', label: 'Seat Allocation', icon: LayoutGrid, adminOnly: true },
   { to: '/reports', label: 'Reports', icon: BarChart3 },
   { to: '/audit', label: 'Audit Logs', icon: ScrollText },
   { to: '/settings', label: 'Settings', icon: Settings },
@@ -33,7 +35,9 @@ const nav = [
 export function AppLayout() {
   const { theme, toggle } = useThemeStore();
   const user = useAuthStore((s) => s.user);
+  const { isSuperAdmin } = useRole();
   const navigate = useNavigate();
+  const visibleNav = nav.filter((item) => !(item.adminOnly && isSuperAdmin));
 
   const onLogout = async () => {
     await logout();
@@ -47,7 +51,7 @@ export function AppLayout() {
           <span className="text-sm font-semibold tracking-tight">Auditorium</span>
         </div>
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-          {nav.map(({ to, label, icon: Icon, end }) => (
+          {visibleNav.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
@@ -72,7 +76,7 @@ export function AppLayout() {
               <span className="truncate text-sm font-medium text-fg">
                 {user?.name || user?.mobile}
               </span>
-              <span className="text-xs text-muted">Administrator</span>
+              <span className="text-xs text-muted">{roleLabel(user?.role)}</span>
             </div>
             <button
               onClick={onLogout}

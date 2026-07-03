@@ -15,7 +15,8 @@
     "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed:admin": "tsx src/scripts/seedAdmin.ts"
+    "seed:admin": "tsx src/scripts/seedAdmin.ts",
+    "seed:superadmin": "tsx src/scripts/seedSuperAdmin.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

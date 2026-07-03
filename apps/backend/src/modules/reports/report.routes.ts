@@ -10,7 +10,7 @@ export const reportRouter = Router();
 
 const movieIdParamSchema = z.object({ movieId: z.string().regex(/^[a-f\d]{24}$/i) });
 
-reportRouter.use(authenticate, authorize(Roles.ADMIN));
+reportRouter.use(authenticate, authorize(Roles.ADMIN, Roles.SUPER_ADMIN));
 
 reportRouter.get(
   '/overview',

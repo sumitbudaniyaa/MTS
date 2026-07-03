@@ -170,7 +170,7 @@ function ScannerFormModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
           label="Password"
           type="password"
           error={errors.password?.message}
-          {...register('password', { required: 'Required', minLength: { value: 6, message: 'Min 6' } })}
+          {...register('password', { required: 'Required', minLength: { value: 8, message: 'Min 8' } })}
         />
       </div>
     </Modal>

@@ -15,7 +15,7 @@ export function useAuthBootstrap(): void {
     if (status !== 'idle') return;
     setStatus('authenticating');
     void refreshSession().then((result) => {
-      if (result && result.user.role === 'ADMIN') {
+      if (result && (result.user.role === 'ADMIN' || result.user.role === 'SUPER_ADMIN')) {
         setAuth(result.user, result.accessToken);
       } else {
         useAuthStore.getState().clear();
@@ -25,8 +25,10 @@ export function useAuthBootstrap(): void {
 }
 
 export async function login(mobile: string, password: string): Promise<AuthUser> {
+  // role=ADMIN scopes the lookup to the admins collection; the account may be ADMIN or
+  // SUPER_ADMIN and both are allowed into this portal.
   const res = await api.post<AuthResponse>('/auth/login', { mobile, password, role: 'ADMIN' });
-  if (res.data.user.role !== 'ADMIN') {
+  if (res.data.user.role !== 'ADMIN' && res.data.user.role !== 'SUPER_ADMIN') {
     throw new Error('This portal is for administrators only');
   }
   useAuthStore.getState().setAuth(res.data.user, res.data.accessToken);

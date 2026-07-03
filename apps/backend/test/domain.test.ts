@@ -31,33 +31,44 @@ function client(url: string, token?: string) {
   };
 }
 
-async function adminToken(url: string): Promise<string> {
+/** Seed a SUPER_ADMIN (units/personnel) and an operational ADMIN (movies/seats); return both tokens. */
+async function seedTokens(url: string): Promise<{ superToken: string; adminToken: string }> {
   await AdminModel.create({
     mobile: '9000000000',
     passwordHash: await hashPassword('Admin123'),
+    role: Roles.SUPER_ADMIN,
   });
-  const res = await fetch(`${url}/api/v1/auth/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ mobile: '9000000000', password: 'Admin123' }),
+  await AdminModel.create({
+    mobile: '9000000001',
+    passwordHash: await hashPassword('Admin123'),
+    role: Roles.ADMIN,
   });
-  return ((await res.json()) as { accessToken: string }).accessToken;
+  const login = async (mobile: string): Promise<string> => {
+    const res = await fetch(`${url}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mobile, password: 'Admin123' }),
+    });
+    return ((await res.json()) as { accessToken: string }).accessToken;
+  };
+  return { superToken: await login('9000000000'), adminToken: await login('9000000001') };
 }
 
 describe('domain (M4)', () => {
   let url: string;
   let close: () => void;
-  let token: string;
+  let superToken: string;
+  let adminToken: string;
 
   beforeEach(async () => {
     ({ url, close } = await startApp());
-    token = await adminToken(url);
+    ({ superToken, adminToken } = await seedTokens(url));
   });
 
   afterEach(() => close());
 
   it('derives familySize server-side and ignores client-sent values', async () => {
-    const api = client(url, token);
+    const api = client(url, superToken);
     const unit = await api('POST', '/api/v1/units', { name: 'Signals', code: 'SIG' });
     expect(unit.status).toBe(201);
     const unitId = (unit.json as { unit: { id: string } }).unit.id;
@@ -65,7 +76,7 @@ describe('domain (M4)', () => {
     // Client tries to sneak familySize=99; server must ignore and compute 1+1+2=4.
     const p = await api('POST', '/api/v1/personnel', {
       mobile: '9111111111',
-      password: 'Pass123',
+      password: 'Pass1234',
       unit: unitId,
       maritalStatus: 'MARRIED',
       spouseMobile: '9222222222',
@@ -77,10 +88,11 @@ describe('domain (M4)', () => {
   });
 
   it('rejects allocations whose sum != total capacity, accepts when equal', async () => {
-    const api = client(url, token);
-    const sig = (await api('POST', '/api/v1/units', { name: 'Signals', code: 'SIG' }))
+    const superApi = client(url, superToken); // units → super admin
+    const api = client(url, adminToken); // movies + seat allocations → operational admin
+    const sig = (await superApi('POST', '/api/v1/units', { name: 'Signals', code: 'SIG' }))
       .json as { unit: { id: string } };
-    const asc = (await api('POST', '/api/v1/units', { name: 'ASC', code: 'ASC' }))
+    const asc = (await superApi('POST', '/api/v1/units', { name: 'ASC', code: 'ASC' }))
       .json as { unit: { id: string } };
 
     const movie = await api('POST', '/api/v1/movies', {
@@ -112,8 +124,9 @@ describe('domain (M4)', () => {
   });
 
   it('lists upcoming movies but only opens booking within the 1h window', async () => {
-    const api = client(url, token);
-    const sig = (await api('POST', '/api/v1/units', { name: 'Signals', code: 'SIG' }))
+    const superApi = client(url, superToken); // units → super admin
+    const api = client(url, adminToken); // movies → operational admin
+    const sig = (await superApi('POST', '/api/v1/units', { name: 'Signals', code: 'SIG' }))
       .json as { unit: { id: string } };
 
     // Far-future movie — shown to users early, but booking NOT yet open.

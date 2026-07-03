@@ -16,10 +16,12 @@ import { NumberInput } from '@/components/ui/NumberInput';
 import { Modal, ConfirmDialog } from '@/components/ui/Modal';
 import { Table, Th, Td, Pagination } from '@/components/ui/Table';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useRole } from '@/lib/role';
 
 export function UnitDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
+  const { canManagePeople } = useRole();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const debounced = useDebounce(search);
@@ -66,16 +68,18 @@ export function UnitDetailsPage() {
 
       <PageHeader
         title={unit.name}
-        subtitle="Unit personnel"
+        subtitle={canManagePeople ? 'Unit personnel' : 'Unit personnel (read-only)'}
         action={
-          <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setBulkOpen(true)}>
-              <Upload className="h-3.5 w-3.5" /> Bulk upload
-            </Button>
-            <Button size="sm" onClick={() => setCreating(true)}>
-              <Plus className="h-3.5 w-3.5" /> Add personnel
-            </Button>
-          </div>
+          canManagePeople ? (
+            <div className="flex gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setBulkOpen(true)}>
+                <Upload className="h-3.5 w-3.5" /> Bulk upload
+              </Button>
+              <Button size="sm" onClick={() => setCreating(true)}>
+                <Plus className="h-3.5 w-3.5" /> Add personnel
+              </Button>
+            </div>
+          ) : undefined
         }
       />
 
@@ -122,14 +126,18 @@ export function UnitDetailsPage() {
                   {p.lastLoginAt ? new Date(p.lastLoginAt).toLocaleDateString() : 'Never'}
                 </Td>
                 <Td className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(p)} title="Edit">
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setDeleting(p)} title="Remove">
-                      <Trash2 className="h-4 w-4 text-danger" />
-                    </Button>
-                  </div>
+                  {canManagePeople ? (
+                    <div className="flex justify-end gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(p)} title="Edit">
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setDeleting(p)} title="Remove">
+                        <Trash2 className="h-4 w-4 text-danger" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <span className="text-muted">—</span>
+                  )}
                 </Td>
               </tr>
             ))}
@@ -263,7 +271,7 @@ function PersonnelFormModal({
         <PasswordInput
           label="Password"
           error={errors.password?.message}
-          {...register('password', { required: 'Required', minLength: { value: 6, message: 'Min 6' } })}
+          {...register('password', { required: 'Required', minLength: { value: 8, message: 'Min 8' } })}
         />
       </div>
 
@@ -414,8 +422,8 @@ function parseRows(rows: Record<string, unknown>[]): { items: BulkItem[]; skippe
     for (const k of Object.keys(raw)) r[normKey(k)] = raw[k];
     const mobile = String(r.mobile ?? '').trim();
     const password = String(r.password ?? '').trim();
-    if (!/^\d{10}$/.test(mobile) || password.length < 6) {
-      skipped.push(`Row ${i + 2}: ${mobile || '(no mobile)'} — needs a 10-digit mobile and 6+ char password`);
+    if (!/^\d{10}$/.test(mobile) || password.length < 8) {
+      skipped.push(`Row ${i + 2}: ${mobile || '(no mobile)'} — needs a 10-digit mobile and 8+ char password`);
       return;
     }
     const rankRaw = String(r.rank ?? '').toUpperCase();

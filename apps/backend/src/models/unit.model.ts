@@ -1,4 +1,5 @@
 import { applyBaseTransforms } from './_shared.js';
+import { applyFieldEncryption } from '../utils/fieldCrypto.js';
 import { Schema, model, type InferSchemaType, type HydratedDocument } from 'mongoose';
 
 /**
@@ -7,7 +8,8 @@ import { Schema, model, type InferSchemaType, type HydratedDocument } from 'mong
  */
 const unitSchema = new Schema(
   {
-    name: { type: String, required: true, trim: true, unique: true },
+    // Encrypted at rest; uniqueness + exact-match search use the `nameHash` blind index.
+    name: { type: String, required: true, trim: true },
     active: { type: Boolean, default: true },
   },
   { timestamps: true },
@@ -17,5 +19,6 @@ export type Unit = InferSchemaType<typeof unitSchema>;
 export type UnitDoc = HydratedDocument<Unit>;
 
 applyBaseTransforms(unitSchema);
+applyFieldEncryption(unitSchema, [{ field: 'name', hash: 'nameHash', unique: true }]);
 
 export const UnitModel = model('Unit', unitSchema);

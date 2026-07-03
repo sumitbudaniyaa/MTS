@@ -19,6 +19,10 @@ const EnvSchema = z.object({
 
   JWT_ACCESS_SECRET: z.string().min(32, 'JWT_ACCESS_SECRET must be >= 32 chars'),
   JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be >= 32 chars'),
+  // Master key for at-rest field encryption (mobiles, unit names). AES-256-GCM + HMAC blind
+  // index are derived from it. MUST be stable — rotating it makes existing ciphertext/indexes
+  // unreadable. Keep it as secret as the JWT secrets.
+  FIELD_ENCRYPTION_KEY: z.string().min(32, 'FIELD_ENCRYPTION_KEY must be >= 32 chars'),
   ACCESS_TOKEN_TTL: z.string().default('15m'),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(7),
 

@@ -24,8 +24,8 @@ export function ProfilePage() {
 
   const submitPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (next.length < 6) {
-      toast.error('New password must be at least 6 characters');
+    if (next.length < 8) {
+      toast.error('New password must be at least 8 characters');
       return;
     }
     setBusy(true);

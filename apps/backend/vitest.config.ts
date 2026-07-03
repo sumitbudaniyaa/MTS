@@ -8,6 +8,7 @@ export default defineConfig({
       NODE_ENV: 'test',
       JWT_ACCESS_SECRET: 'test-access-secret-test-access-secret-0123456789',
       JWT_REFRESH_SECRET: 'test-refresh-secret-test-refresh-secret-0123456789',
+      FIELD_ENCRYPTION_KEY: 'test-field-encryption-key-test-field-encryption-0123456789',
       MONGO_URI: 'mongodb://127.0.0.1:27017/test',
       BCRYPT_ROUNDS: '10',
       COOKIE_SECURE: 'false',

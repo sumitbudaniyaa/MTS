@@ -11,10 +11,12 @@ export const logger = pino({
     paths: [
       'req.headers.authorization',
       'req.headers.cookie',
+      'res.headers["set-cookie"]',
       'password',
       'passwordHash',
       'token',
       'refreshToken',
+      'accessToken',
     ],
     censor: '[redacted]',
   },

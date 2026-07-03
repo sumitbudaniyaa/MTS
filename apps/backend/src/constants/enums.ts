@@ -46,6 +46,7 @@ export type SeatStatusType = (typeof SeatStatus)[keyof typeof SeatStatus];
 
 export const AuditAction = {
   LOGIN: 'LOGIN',
+  LOGIN_FAILED: 'LOGIN_FAILED',
   LOGOUT: 'LOGOUT',
   MOVIE_CREATE: 'MOVIE_CREATE',
   UNIT_CREATE: 'UNIT_CREATE',

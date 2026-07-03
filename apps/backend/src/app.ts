@@ -27,13 +27,13 @@ export function createApp(): Express {
   app.use(
     pinoHttp({
       logger,
-      // In dev, suppress the giant req/res header dumps. One compact line per request.
-      ...(env.NODE_ENV !== 'production' && {
-        serializers: {
-          req: (req) => ({ method: req.method, url: req.url }),
-          res: (res) => ({ statusCode: res.statusCode }),
-        },
-      }),
+      // Compact request log in EVERY environment — only method/url/status, never headers or
+      // bodies. This guarantees bearer tokens and the refresh cookie are never written to logs
+      // (the default pino-http serializers dump full req/res headers, which include them).
+      serializers: {
+        req: (req) => ({ method: req.method, url: req.url }),
+        res: (res) => ({ statusCode: res.statusCode }),
+      },
       // Silence OPTIONS (CORS preflight) and health checks.
       autoLogging: {
         ignore: (req) =>

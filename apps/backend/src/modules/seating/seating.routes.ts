@@ -16,8 +16,10 @@ export const seatingRouter = Router();
 
 seatingRouter.use(authenticate);
 
-// ---- Auditorium layout (ADMIN) ----
-seatingRouter.get('/auditorium', authorize(Roles.ADMIN), ctrl.getAuditorium);
+// ---- Auditorium layout ----
+// Reading the layout is open to both admin tiers (super admin gets a read-only view);
+// saving/managing it is operational ADMIN only.
+seatingRouter.get('/auditorium', authorize(Roles.ADMIN, Roles.SUPER_ADMIN), ctrl.getAuditorium);
 seatingRouter.put(
   '/auditorium',
   authorize(Roles.ADMIN),
@@ -40,7 +42,7 @@ seatingRouter.post(
 // ---- Admin movie booking detail (layout + who booked what) ----
 seatingRouter.get(
   '/movies/:movieId/detail',
-  authorize(Roles.ADMIN),
+  authorize(Roles.ADMIN, Roles.SUPER_ADMIN),
   validate({ params: movieIdParamSchema }),
   ctrl.getMovieDetail,
 );

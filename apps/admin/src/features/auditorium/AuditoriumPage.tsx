@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { NumberInput } from '@/components/ui/NumberInput';
 import { Modal } from '@/components/ui/Modal';
+import { useRole } from '@/lib/role';
 import { cn } from '@/lib/cn';
 
 type Rank = 'OFFICER' | 'JCO' | 'JAWAN';
@@ -141,6 +142,7 @@ function AuditoriumView({ rows }: { rows: RowEdit[] }) {
 }
 
 export function AuditoriumPage() {
+  const { canManageMovies } = useRole();
   const [editing, setEditing] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -157,18 +159,27 @@ export function AuditoriumPage() {
     <div>
       <PageHeader
         title="Auditorium"
-        subtitle={`Seating layout · ${totalSeats} seats`}
+        subtitle={`Seating layout · ${totalSeats} seats${canManageMovies ? '' : ' (read-only)'}`}
         action={
-          <Button size="sm" onClick={() => setEditing(true)}>
-            <Pencil className="h-3.5 w-3.5" /> Edit layout
-          </Button>
+          canManageMovies ? (
+            <Button size="sm" onClick={() => setEditing(true)}>
+              <Pencil className="h-3.5 w-3.5" /> Edit layout
+            </Button>
+          ) : undefined
         }
       />
 
       {isLoading && <LoadingState />}
       {data && rows.length === 0 && (
         <Card>
-          <EmptyState title="No layout yet" hint="Click “Edit layout” to design the auditorium." />
+          <EmptyState
+            title="No layout yet"
+            hint={
+              canManageMovies
+                ? 'Click “Edit layout” to design the auditorium.'
+                : 'No layout has been designed yet.'
+            }
+          />
         </Card>
       )}
       {data && rows.length > 0 && <AuditoriumView rows={rows} />}

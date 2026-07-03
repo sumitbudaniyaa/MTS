@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal, ConfirmDialog } from '@/components/ui/Modal';
 import { Table, Th, Td, Pagination } from '@/components/ui/Table';
+import { useRole } from '@/lib/role';
 import { cn } from '@/lib/cn';
 
 const statusTone: Record<MovieStatus, 'neutral' | 'accent' | 'success' | 'warning' | 'danger'> = {
@@ -39,6 +40,7 @@ function toLocalInput(iso: string): string {
 
 export function MoviesPage() {
   const qc = useQueryClient();
+  const { canManageMovies } = useRole();
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Movie | null>(null);
@@ -74,11 +76,13 @@ export function MoviesPage() {
     <div>
       <PageHeader
         title="Movies"
-        subtitle="Scheduled shows"
+        subtitle={canManageMovies ? 'Scheduled shows' : 'Scheduled shows (read-only)'}
         action={
-          <Button size="sm" onClick={() => setCreating(true)}>
-            <Plus className="h-3.5 w-3.5" /> New movie
-          </Button>
+          canManageMovies ? (
+            <Button size="sm" onClick={() => setCreating(true)}>
+              <Plus className="h-3.5 w-3.5" /> New movie
+            </Button>
+          ) : undefined
         }
       />
 
@@ -122,27 +126,31 @@ export function MoviesPage() {
                     >
                       <Eye className="h-3.5 w-3.5" />
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      loading={openAll.isPending && openAll.variables?.id === m.id}
-                      onClick={() => openAll.mutate({ id: m.id, open: !m.openToAll })}
-                      title="Allow any rank to book this movie"
-                    >
-                      {m.openToAll ? 'Restrict ranks' : 'Open to all'}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={bookingHasOpened(m)}
-                      onClick={() => setEditing(m)}
-                      title={bookingHasOpened(m) ? 'Locked — booking has opened' : 'Edit'}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setDeleting(m)} title="Delete">
-                      <Trash2 className="h-3.5 w-3.5 text-danger" />
-                    </Button>
+                    {canManageMovies && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={openAll.isPending && openAll.variables?.id === m.id}
+                          onClick={() => openAll.mutate({ id: m.id, open: !m.openToAll })}
+                          title="Allow any rank to book this movie"
+                        >
+                          {m.openToAll ? 'Restrict ranks' : 'Open to all'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={bookingHasOpened(m)}
+                          onClick={() => setEditing(m)}
+                          title={bookingHasOpened(m) ? 'Locked — booking has opened' : 'Edit'}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setDeleting(m)} title="Delete">
+                          <Trash2 className="h-3.5 w-3.5 text-danger" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </Td>
               </tr>

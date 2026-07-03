@@ -9,11 +9,17 @@ export function applyBaseTransforms(schema: Schema): void {
   schema.set('toJSON', {
     virtuals: true,
     versionKey: false,
+    // `getters: true` lets encrypted fields (see fieldCrypto) decrypt on serialization.
+    getters: true,
     transform(_doc, ret: Record<string, unknown>) {
       ret.id = ret._id !== undefined && ret._id !== null ? String(ret._id) : ret.id;
       delete ret._id;
       delete ret.passwordHash;
       delete ret.tokenHash;
+      // Blind-index hashes are internal — never expose them.
+      delete ret.mobileHash;
+      delete ret.spouseMobileHash;
+      delete ret.nameHash;
       return ret;
     },
   });

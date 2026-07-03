@@ -1,4 +1,5 @@
 import { applyBaseTransforms } from './_shared.js';
+import { applyFieldEncryption } from '../utils/fieldCrypto.js';
 import { Schema, model, type InferSchemaType, type HydratedDocument, type Types } from 'mongoose';
 import { MaritalStatus, Rank } from '../constants/enums.js';
 import { Roles } from '../types/index.js';
@@ -14,14 +15,10 @@ import { Roles } from '../types/index.js';
  */
 const userSchema = new Schema(
   {
-    // Mobile number is the login identity. Stored normalized (digits only).
-    mobile: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-      match: [/^\d{10}$/, 'Mobile must be 10 digits'],
-    },
+    // Mobile number is the login identity. Stored ENCRYPTED at rest (AES-256-GCM); equality
+    // lookups + uniqueness use the `mobileHash` blind index (added by applyFieldEncryption).
+    // Format is validated at the Zod input layer before encryption.
+    mobile: { type: String, required: true, trim: true },
     passwordHash: { type: String, required: true, select: false },
     // The `users` collection holds personnel only; role is fixed to USER. Admins and
     // scanners live in their own `admins` / `scanners` collections.
@@ -35,11 +32,8 @@ const userSchema = new Schema(
       enum: Object.values(MaritalStatus),
       default: MaritalStatus.SINGLE,
     },
-    spouseMobile: {
-      type: String,
-      default: null,
-      match: [/^\d{10}$/, 'Spouse mobile must be 10 digits'],
-    },
+    // Encrypted at rest; alternate-login lookups use the `spouseMobileHash` blind index.
+    spouseMobile: { type: String, default: null },
     numberOfKids: { type: Number, default: 0, min: 0, max: 20 },
 
     // Derived — see pre-validate hook. Never set from client input.
@@ -74,14 +68,17 @@ userSchema.pre('validate', function recomputeFamilySize(next) {
 });
 
 userSchema.index({ role: 1, unit: 1 });
-// Spouse-mobile lookups for the alternate login path.
-userSchema.index({ spouseMobile: 1 }, { sparse: true });
 
 export type User = InferSchemaType<typeof userSchema>;
 export type UserDoc = HydratedDocument<User>;
 export type UserId = Types.ObjectId;
 
 applyBaseTransforms(userSchema);
+// Encrypt mobile + spouse mobile at rest; add unique/sparse blind indexes for lookup.
+applyFieldEncryption(userSchema, [
+  { field: 'mobile', hash: 'mobileHash', unique: true },
+  { field: 'spouseMobile', hash: 'spouseMobileHash' },
+]);
 
 export const UserModel = model('User', userSchema);
 export { computeFamilySize };

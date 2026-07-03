@@ -60,10 +60,12 @@ src/
 
 | Collection        | Purpose | Key fields |
 |-------------------|---------|------------|
-| `units`           | Army units (org label only; no seat quotas) | `name`, `active` |
-| `admins`          | Admin accounts (separate collection) | `mobile`, `passwordHash`, `role` (fixed ADMIN), `name`, `active` |
-| `scanners`        | Scanner/operator accounts (separate collection) | `mobile`, `passwordHash`, `role` (fixed SCANNER), `active` |
-| `users`           | Personnel accounts only | `mobile`, `passwordHash`, `role` (fixed USER), `unit`, `rank` (OFFICER\|JCO\|JAWAN), `maritalStatus`, `spouseMobile`, `numberOfKids`, `familySize` (derived) |
+| `units`           | Army units (org label only; no seat quotas) | `name` 🔒(+`nameHash`), `active` |
+| `admins`          | Admin accounts (separate collection) | `mobile` 🔒(+`mobileHash`), `passwordHash`, `role` (SUPER_ADMIN\|ADMIN), `name`, `active` |
+| `scanners`        | Scanner/operator accounts (separate collection) | `mobile` 🔒(+`mobileHash`), `passwordHash`, `role` (fixed SCANNER), `active` |
+| `users`           | Personnel accounts only | `mobile` 🔒(+`mobileHash`), `passwordHash`, `role` (fixed USER), `unit`, `rank` (OFFICER\|JCO\|JAWAN), `maritalStatus`, `spouseMobile` 🔒(+`spouseMobileHash`), `numberOfKids`, `familySize` (derived) |
+
+> 🔒 = **AES-256-GCM encrypted at rest** with a keyed HMAC blind index (`*Hash`) for lookup/uniqueness (§3.5.1).
 | `movies`          | Shows | `title`, `description`, `poster` (URL or base64), `showDate`, `startTime`, `durationMinutes` (endTime = start + duration), `totalSeats`, `status`, `openToAll` (rank bypass) |
 | `auditoria`       | Physical venue layout (singleton) | `name`, `rows[]` → `{ label, seats[] → { number, allowedRanks[] } }` |
 | `movieseats`      | Per-movie seat inventory | `movie`, `row`, `number`, `label`, `allowedRanks[]`, `status` (FREE\|HELD\|BOOKED), `heldBy`, `holdExpiresAt`, `bookedBy`, `booking`, `ticketCode` |
@@ -88,8 +90,18 @@ write; the client-supplied value is ignored.
 Personnel **ranks** (OFFICER/JCO/JAWAN) gate seat booking — see §3.10.
 
 ### 3.4 Roles & AuthZ
-`ADMIN` · `USER` · `SCANNER`. Every route is wrapped by `authenticate` then
+`SUPER_ADMIN` · `ADMIN` · `USER` · `SCANNER`. Every route is wrapped by `authenticate` then
 `authorize(...roles)`. No route is public except `POST /auth/login` and `POST /auth/refresh`.
+
+**Two admin tiers (separation of duties)** — both live in the `admins` collection:
+- **SUPER_ADMIN**: units, USER personnel and admin accounts (create/edit/delete). Read-only on
+  movies & auditorium. Seeded by `npm run seed:admin`.
+- **ADMIN** (operational, created by a super admin): movies, auditorium, seat allocation and
+  scanner operators. Read-only on units & USER personnel; cannot manage admin accounts.
+- **Both** see reports, audit, attendance and the dashboard.
+- Personnel writes are enforced by *target* role in the controller: USER personnel are
+  SUPER_ADMIN-only, while SCANNER operators may be managed by either tier. The admin frontend
+  (`lib/role.ts` → `useRole()`) hides controls to match, but the server is the source of truth.
 
 ### 3.5 Auth Flow
 - Login → bcrypt verify → issue short-lived **access JWT** (in-memory on client) + **refresh
@@ -101,10 +113,33 @@ Personnel **ranks** (OFFICER/JCO/JAWAN) gate seat booking — see §3.10.
 - Cookie attributes are env-driven: `COOKIE_SECURE`, `COOKIE_DOMAIN`, and **`COOKIE_SAMESITE`**
   (`strict` for same-site / one origin; **`none` + `Secure=true`** for cross-site hosting such
   as apps on Vercel + API on Render).
-- Rotation is **resilient to the reload / two-tab race**: a just-rotated token (revoked but
-  with a successor, not expired) is still accepted and re-issues a fresh token, so legitimate
-  sessions are never spuriously logged out. Only a token revoked **without** a successor
-  (logout) or an unknown/expired token is rejected.
+- Rotation is **resilient to the reload / two-tab race**: a just-rotated token is accepted only
+  within a **30 s grace window** and re-issues a fresh token, so legitimate sessions are never
+  spuriously logged out. Presenting a rotated token **after** the grace window is treated as
+  **reuse of a leaked token → the whole family is revoked**. A token revoked without a successor
+  (logout) or an unknown/expired token is rejected outright.
+
+### 3.5.1 Security hardening
+- **Field encryption at rest** (`utils/fieldCrypto.ts`): **mobile numbers** (admins/scanners/
+  users + spouse mobiles) and **unit names** are stored **AES-256-GCM** encrypted. Each field
+  carries a keyed **HMAC blind index** (`mobileHash`/`spouseMobileHash`/`nameHash`, added by the
+  `applyFieldEncryption` plugin) for equality lookups (login, spouse login) and uniqueness. A
+  Mongoose **getter decrypts on read** and a save/insertMany hook **seals on write**, so services
+  and the API see plaintext while the DB only holds ciphertext. Keys derive from
+  **`FIELD_ENCRYPTION_KEY`** (scrypt → separate AES + HMAC keys). Trade-off: mobile/unit-name
+  search is **exact-match** (blind index), not substring.
+- **JWT** access tokens are pinned to **HS256** on sign and verify (no algorithm confusion).
+- **Logs** never contain secrets: request logging is reduced to method/url/status in every
+  environment, and the base logger redacts `authorization`/`cookie`/`set-cookie` + token fields.
+- **Rate limits are per-identity where it matters**: login is keyed by **mobile** and booking/
+  scan by **user id** (not IP), so a shared-NAT network can't lock everyone out and IP rotation
+  can't bypass; a global per-IP baseline still applies. Failed logins are audited (`LOGIN_FAILED`).
+- **Search** input is escaped before use in Mongo `$regex` (no regex injection / ReDoS);
+  `express-mongo-sanitize` strips `$`/`.` operators; all input is Zod-validated.
+- **Socket.io** authenticates the handshake (access token in `auth.token`) — no anonymous
+  subscribers to the live seat map.
+- **Passwords**: new passwords require ≥ 8 chars (login still accepts existing 6-char ones);
+  bcrypt(12); stored `select:false`; access tokens live only in memory on the client.
 
 ### 3.6 Concurrency & Anti-Oversell (critical)
 Seat issuance must never oversell. Strategy:
@@ -193,7 +228,8 @@ config. See `apps/backend/.env.example`.
 
 ## 7. Current Status
 **All milestones + change requests + the seat epic are complete and verified** — backend
-**18/18 tests, tsc + eslint clean**; admin/user/scanner all build + lint clean.
+**23/23 tests** (incl. throughput/contention benchmark, refresh-reuse detection, at-rest field
+encryption), **tsc + eslint clean**; admin/user/scanner all build + lint clean.
 
 Backend (auth, units, personnel, movies, seats/quota, **seating**, bookings, attendance,
 audit, reports, admins) + cron jobs + socket.io + security pipeline. Admin Portal, User app,
@@ -243,12 +279,15 @@ Deploy: PM2 `ecosystem.config.cjs` (cluster mode) for the API; apps served by an
 
 ### 7.1 API surface (`/api/v1`)
 - `auth`: login / refresh / logout / me / **change-password**
-- `units` CRUD · `personnel` CRUD (USER/SCANNER) · `admins` (list/create/**edit/delete**, ADMIN)
-- `movies` CRUD + `/movies/available` (public, returns `bookingOpen`) + `/movies/scanner` (SCANNER)
-- `seat-allocations` (legacy quota, PUT/GET per movie)
-- **`seating`**: `GET/PUT /seating/auditorium` · `POST /seating/movies/:id/generate` (ADMIN) ·
-  `PATCH /seating/movies/:id/open-to-all` (ADMIN) ·
-  `GET /seating/movies/:id/detail` (ADMIN — layout + per-seat booker + bookings list) ·
+- `units` reads (both tiers) / writes (**SUPER_ADMIN**) · `personnel` reads (both) / USER writes
+  (SUPER_ADMIN) / SCANNER writes (both) · `admins` list/create/edit/delete (**SUPER_ADMIN**, create
+  takes a `role` of ADMIN\|SUPER_ADMIN)
+- `movies` reads (both admin tiers) / writes create-edit-delete (**ADMIN** only) + `/movies/available`
+  (public, returns `bookingOpen`) + `/movies/scanner` (SCANNER)
+- `seat-allocations` (legacy quota, PUT/GET per movie — ADMIN)
+- **`seating`**: `GET /seating/auditorium` (both) · `PUT /seating/auditorium` (**ADMIN**) ·
+  `POST /seating/movies/:id/generate` (ADMIN) · `PATCH /seating/movies/:id/open-to-all` (ADMIN) ·
+  `GET /seating/movies/:id/detail` (both admin tiers — layout + per-seat booker + bookings list) ·
   `GET /seating/movies/:id/seats` · `POST …/hold` · `…/release` · `…/book` (USER)
 - `bookings` (create/list/get/cancel + `/bookings/allowance/:movieId`, USER)
 - `attendance/verify` (SCANNER) + `/attendance/movies/:id/summary`

@@ -1,5 +1,6 @@
 import { Schema, model, type InferSchemaType, type HydratedDocument } from 'mongoose';
 import { applyBaseTransforms } from './_shared.js';
+import { applyFieldEncryption } from '../utils/fieldCrypto.js';
 import { Roles } from '../types/index.js';
 
 /**
@@ -8,13 +9,8 @@ import { Roles } from '../types/index.js';
  */
 const scannerSchema = new Schema(
   {
-    mobile: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-      match: [/^\d{10}$/, 'Mobile must be 10 digits'],
-    },
+    // Encrypted at rest; lookups/uniqueness use the `mobileHash` blind index.
+    mobile: { type: String, required: true, trim: true },
     passwordHash: { type: String, required: true, select: false },
     role: { type: String, default: Roles.SCANNER, immutable: true },
     active: { type: Boolean, default: true },
@@ -27,5 +23,6 @@ export type Scanner = InferSchemaType<typeof scannerSchema>;
 export type ScannerDoc = HydratedDocument<Scanner>;
 
 applyBaseTransforms(scannerSchema);
+applyFieldEncryption(scannerSchema, [{ field: 'mobile', hash: 'mobileHash', unique: true }]);
 
 export const ScannerModel = model('Scanner', scannerSchema);

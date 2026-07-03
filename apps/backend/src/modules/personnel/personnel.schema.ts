@@ -12,7 +12,7 @@ const mobile = z.string().regex(/^\d{10}$/, 'Mobile must be 10 digits');
 export const createPersonnelSchema = z
   .object({
     mobile,
-    password: z.string().min(6).max(128),
+    password: z.string().min(8).max(128),
     role: z.enum([Roles.USER, Roles.SCANNER]).default(Roles.USER),
     unit: z.string().regex(/^[a-f\d]{24}$/i).optional(),
     rank: z.nativeEnum(Rank).default(Rank.JAWAN),
@@ -33,7 +33,7 @@ export const bulkPersonnelSchema = z.object({
     .array(
       z.object({
         mobile,
-        password: z.string().min(6).max(128),
+        password: z.string().min(8).max(128),
         rank: z.nativeEnum(Rank).optional(),
         maritalStatus: z.nativeEnum(MaritalStatus).optional(),
         spouseMobile: mobile.optional(),
@@ -52,7 +52,7 @@ export const updatePersonnelSchema = z.object({
   spouseMobile: mobile.nullable().optional(),
   numberOfKids: z.number().int().min(0).max(20).optional(),
   active: z.boolean().optional(),
-  password: z.string().min(6).max(128).optional(),
+  password: z.string().min(8).max(128).optional(),
 });
 export type UpdatePersonnelInput = z.infer<typeof updatePersonnelSchema>;
 

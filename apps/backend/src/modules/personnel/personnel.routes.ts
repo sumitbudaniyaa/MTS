@@ -13,8 +13,10 @@ import * as ctrl from './personnel.controller.js';
 
 export const personnelRouter = Router();
 
-// Personnel management is ADMIN-only.
-personnelRouter.use(authenticate, authorize(Roles.ADMIN));
+// Both admin tiers reach these routes; the controller enforces the fine-grained rule:
+// USER personnel writes are SUPER_ADMIN-only, while SCANNER-operator writes are allowed for
+// operational ADMINs too. Reads are open to both tiers.
+personnelRouter.use(authenticate, authorize(Roles.ADMIN, Roles.SUPER_ADMIN));
 
 personnelRouter.post('/', validate({ body: createPersonnelSchema }), ctrl.createPersonnel);
 personnelRouter.post('/bulk', validate({ body: bulkPersonnelSchema }), ctrl.bulkCreatePersonnel);

@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../src/app.js';
-import { UserModel } from '../src/models/index.js';
+import { UserModel, RefreshTokenModel } from '../src/models/index.js';
 import { hashPassword } from '../src/utils/password.js';
+import { hashRefreshToken } from '../src/utils/jwt.js';
 import { Roles } from '../src/types/index.js';
 
 /** Spin up the real app on an ephemeral port and return a base URL + closer. */
@@ -105,6 +106,40 @@ describe('auth', () => {
         headers: { cookie: rotated! },
       });
       expect(afterLogout.status).toBe(401);
+    } finally {
+      close();
+    }
+  });
+
+  it('detects refresh-token reuse after the grace window and revokes the whole family', async () => {
+    const { url, close } = await startApp();
+    try {
+      const loginRes = await fetch(`${url}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mobile: MOBILE, password: PASSWORD }),
+      });
+      const t0 = refreshCookie(loginRes)!; // "refresh_token=<raw>"
+      const t0raw = t0.split('=')[1]!;
+
+      // Rotate once: T0 -> T1.
+      const rotate = await fetch(`${url}/api/v1/auth/refresh`, { method: 'POST', headers: { cookie: t0 } });
+      expect(rotate.status).toBe(200);
+      const t1 = refreshCookie(rotate)!;
+
+      // Age T0's rotation past the grace window so re-presenting it looks like a leaked replay.
+      await RefreshTokenModel.updateOne(
+        { tokenHash: hashRefreshToken(t0raw) },
+        { $set: { revokedAt: new Date(Date.now() - 60_000) } },
+      );
+
+      // Reusing the old token is now rejected as reuse…
+      const reuse = await fetch(`${url}/api/v1/auth/refresh`, { method: 'POST', headers: { cookie: t0 } });
+      expect(reuse.status).toBe(401);
+
+      // …and the whole family is killed, so even the good successor T1 no longer works.
+      const successor = await fetch(`${url}/api/v1/auth/refresh`, { method: 'POST', headers: { cookie: t1 } });
+      expect(successor.status).toBe(401);
     } finally {
       close();
     }

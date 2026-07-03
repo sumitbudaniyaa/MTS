@@ -10,6 +10,7 @@ import {
 import { ApiError } from '../../utils/apiError.js';
 import { buildMeta, type Paginated } from '../../utils/pagination.js';
 import { env } from '../../config/env.js';
+import { escapeRegex } from '../../utils/escapeRegex.js';
 import { MovieStatus } from '../../constants/enums.js';
 import type { CreateMovieInput, MovieListQuery, UpdateMovieInput } from './movie.schema.js';
 
@@ -52,7 +53,7 @@ export async function createMovie(input: CreateMovieInput): Promise<MovieDoc> {
 export async function listMovies(query: MovieListQuery): Promise<Paginated<MovieDoc>> {
   const filter: FilterQuery<MovieDoc> = {};
   if (query.status) filter.status = query.status;
-  if (query.search) filter.title = { $regex: query.search, $options: 'i' };
+  if (query.search) filter.title = { $regex: escapeRegex(query.search), $options: 'i' };
 
   const [items, total] = await Promise.all([
     MovieModel.find(filter)

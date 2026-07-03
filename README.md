@@ -8,7 +8,7 @@ the full design and [todo.md](todo.md) for status.
 
 | Path           | What                                   | Status |
 |----------------|----------------------------------------|--------|
-| `apps/backend` | Node + Express + TS + Mongoose + socket.io | ✅ complete (18 tests) |
+| `apps/backend` | Node + Express + TS + Mongoose + socket.io | ✅ complete (23 tests) |
 | `apps/admin`   | React 19 Admin Portal (web, desktop, light/dark) | ✅ complete |
 | `apps/user`    | React 19 User app (web, mobile-first, live seat picker) | ✅ complete |
 | `apps/scanner` | React 19 Scanner app (web, mobile, QR camera) | ✅ complete |
@@ -29,9 +29,37 @@ Accounts are physically split into three MongoDB collections:
 
 | Collection | Model | Purpose |
 |------------|-------|---------|
-| `admins`   | `AdminModel`   | Admin operator accounts |
+| `admins`   | `AdminModel`   | Admin accounts — two tiers: **SUPER_ADMIN** and **ADMIN** |
 | `scanners` | `ScannerModel` | Door-scanner operator accounts |
 | `users`    | `UserModel`    | Personnel (USER) accounts with unit/family fields |
+
+### Admin tiers (separation of duties)
+
+The `admins` collection holds two roles:
+
+| Capability | SUPER_ADMIN | ADMIN (operational) |
+|------------|:----------:|:-------------------:|
+| Units — create/edit/delete | ✅ | ❌ (read-only) |
+| Personnel (USER) — create/edit/delete/bulk | ✅ | ❌ (read-only) |
+| Admin accounts — create/edit/delete | ✅ | ❌ |
+| Scanner operators — manage | ✅ | ✅ |
+| Movies — create/edit/delete | ❌ (read-only) | ✅ |
+| Auditorium layout — manage | ❌ (read-only) | ✅ |
+| Movie seat allocation | ❌ | ✅ |
+| Reports · Audit · Attendance · Dashboard | ✅ | ✅ |
+
+The **seed creates a SUPER_ADMIN**; super admins create operational ADMINs from **Settings →
+Administrators** (pick the tier). The backend enforces every rule via route authorization; the
+admin UI merely hides controls the current tier can't use.
+
+### Field encryption at rest
+
+**Mobile numbers** (across admins/scanners/users, including spouse mobiles) and **unit names**
+are stored **AES-256-GCM encrypted**. Each encrypted field has a companion keyed **HMAC blind
+index** (`mobileHash` / `nameHash`) that keeps login, uniqueness and spouse-login working; the
+ciphertext is decrypted transparently on read. Set a stable, secret **`FIELD_ENCRYPTION_KEY`**
+(≥ 32 chars) — losing/rotating it makes existing data unreadable. Trade-off: admin **search on
+mobile / unit name is exact-match** (you can't substring-search ciphertext).
 
 `mobile` uniqueness is **per-collection**, so the same number can hold a separate admin,
 scanner **and** user account (one person may be all three). Each app sends its `role` on
@@ -79,11 +107,16 @@ Requires Node 20+ and MongoDB (Atlas or local). A replica set is recommended for
 cd apps/backend
 cp .env.example .env            # then edit MONGO_URI + secrets
 npm install
-npm run seed:admin              # create the first ADMIN account (in `admins` collection)
+npm run seed:admin              # create the first SUPER_ADMIN (in `admins` collection)
 npm run dev                     # starts on :4000
 ```
 
 Verify: `curl localhost:4000/health`
+
+> The seed creates a **SUPER_ADMIN** directly, so a fresh install needs no promotion step.
+> Note that `mobile` is **encrypted at rest** (see below) — you can't query admins by a
+> plaintext mobile in `mongosh`; match by the plaintext `name` or `_id` instead, e.g.
+> `db.admins.updateOne({ name: "System Administrator" }, { $set: { role: "SUPER_ADMIN" } })`.
 
 For production, run the API under PM2: `cd apps/backend && npm run build &&
 pm2 start ecosystem.config.cjs` (cluster mode). See `apps/backend/ecosystem.config.cjs`.
@@ -94,7 +127,9 @@ pm2 start ecosystem.config.cjs` (cluster mode). See `apps/backend/ecosystem.conf
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run lint` — ESLint (no `any`, strict)
 - `npm test` — Vitest (spins up in-memory Mongo replica set)
-- `npm run seed:admin` — bootstrap first admin
+- `npm run seed:admin` — bootstrap the first SUPER_ADMIN from `SEED_ADMIN_*` env vars
+- `npm run seed:superadmin -- <mobile> <password> ["Name"]` — create a SUPER_ADMIN with custom
+  credentials (mobile is encrypted + hashed correctly by the app; a raw `mongosh` insert cannot)
 
 ### API
 Base path `/api/v1`. Full surface in [architecture.md](architecture.md#71-api-surface-apiv1).
@@ -133,7 +168,8 @@ ping `/health` with UptimeRobot so the free dyno doesn't sleep), the **three app
 **Render — API** (`apps/backend`):
 - Build: `npm install --include=dev && npm run build` · Start: `npm start`
 - Env: `NODE_ENV=production`, `MONGO_URI`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`,
-  `COOKIE_SECURE=true`, `COOKIE_SAMESITE=none` (cross-site), `COOKIE_DOMAIN=` (blank),
+  **`FIELD_ENCRYPTION_KEY`** (≥ 32 chars, stable & secret), `COOKIE_SECURE=true`,
+  `COOKIE_SAMESITE=none` (cross-site), `COOKIE_DOMAIN=` (blank),
   `CORS_ORIGINS=https://<admin>.vercel.app,https://<user>.vercel.app,https://<scanner>.vercel.app`
 
 **Vercel — each app** (one project per app, root dir `apps/admin` / `apps/user` / `apps/scanner`):
@@ -144,7 +180,9 @@ ping `/health` with UptimeRobot so the free dyno doesn't sleep), the **three app
 
 **Gotchas:** devDependencies are needed to compile the API, so the build command uses
 `--include=dev`. For cross-site cookies you MUST use `COOKIE_SAMESITE=none` + `COOKIE_SECURE=true`.
-Seed the first admin via the Compass `mongosh` snippet or `npm run seed:admin`.
+Seed the first SUPER_ADMIN with `npm run seed:admin` (env-based) or `npm run seed:superadmin --
+<mobile> <password>`. A raw `mongosh` insert won't work — mobiles are encrypted with a blind
+index and passwords are bcrypt-hashed, which only the app can produce.
 
 Self-hosting alternative: run the API under **PM2** (`pm2 start ecosystem.config.cjs`) and
 serve the built apps from any static host / nginx; if everything is one origin or same-site,

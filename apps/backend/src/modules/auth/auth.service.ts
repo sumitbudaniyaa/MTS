@@ -90,12 +90,19 @@ export async function login(
   return { accessToken, refresh, user: toPublicUser(account) };
 }
 
+// A token that was already rotated is accepted only within this window after its rotation, to
+// tolerate the reload/concurrent-tab race. Presenting it LATER than this is treated as reuse of
+// a leaked token → the whole family is revoked (theft response).
+const REUSE_GRACE_MS = 30_000;
+
 /**
  * Rotate a refresh token. Resilient to the rotation race (concurrent tabs / a reload firing
- * two refreshes): a token that was already rotated (revoked WITH a successor) and hasn't
- * expired is still accepted — we just mint a fresh token in the same family. Only a token
- * that was revoked WITHOUT a successor (i.e. logged out) or is unknown/expired is rejected,
- * so legitimate sessions are never spuriously logged out.
+ * two refreshes): a token that was already rotated (revoked WITH a successor) is still accepted
+ * for a short grace window, minting a fresh token in the same family. Rejected when:
+ *  - unknown / expired,
+ *  - revoked WITHOUT a successor (i.e. logged out),
+ *  - revoked WITH a successor but presented long after rotation → treated as **token reuse**,
+ *    which revokes the entire family (a stolen, already-rotated token can't be replayed).
  */
 export async function rotateRefresh(rawToken: string, req?: Request): Promise<AuthTokens> {
   const tokenHash = hashRefreshToken(rawToken);
@@ -105,9 +112,18 @@ export async function rotateRefresh(rawToken: string, req?: Request): Promise<Au
   if (existing.expiresAt.getTime() <= Date.now()) {
     throw ApiError.unauthorized('Refresh token expired');
   }
-  // Revoked by logout (no successor) — genuinely dead.
-  if (existing.revokedAt && !existing.replacedBy) {
-    throw ApiError.unauthorized('Refresh token already used');
+  if (existing.revokedAt) {
+    // Revoked by logout (no successor) — genuinely dead.
+    if (!existing.replacedBy) throw ApiError.unauthorized('Refresh token already used');
+    // Rotated already: benign only within the grace window; otherwise it's a replayed/leaked
+    // token — kill the whole family so neither the attacker nor the victim can keep using it.
+    if (Date.now() - existing.revokedAt.getTime() > REUSE_GRACE_MS) {
+      await RefreshTokenModel.updateMany(
+        { family: existing.family, revokedAt: null },
+        { $set: { revokedAt: new Date() } },
+      );
+      throw ApiError.unauthorized('Refresh token reuse detected');
+    }
   }
 
   const account = await findAccountById(String(existing.user), existing.role as Role);

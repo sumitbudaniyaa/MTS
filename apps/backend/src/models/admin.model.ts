@@ -1,22 +1,24 @@
 import { Schema, model, type InferSchemaType, type HydratedDocument } from 'mongoose';
 import { applyBaseTransforms } from './_shared.js';
+import { applyFieldEncryption } from '../utils/fieldCrypto.js';
 import { Roles } from '../types/index.js';
 
 /**
- * ADMIN accounts live in their own `admins` collection, separate from scanners and
- * personnel. `role` is fixed to ADMIN (kept on the doc so refs/principals read uniformly).
+ * Admin accounts live in their own `admins` collection, separate from scanners and personnel.
+ * This collection holds BOTH tiers: SUPER_ADMIN (top; manages people + admin accounts) and
+ * ADMIN (operational; manages movies/auditorium/bookings). `role` is set at creation.
  */
 const adminSchema = new Schema(
   {
-    mobile: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-      match: [/^\d{10}$/, 'Mobile must be 10 digits'],
-    },
+    // Encrypted at rest; lookups/uniqueness use the `mobileHash` blind index.
+    mobile: { type: String, required: true, trim: true },
     passwordHash: { type: String, required: true, select: false },
-    role: { type: String, default: Roles.ADMIN, immutable: true },
+    role: {
+      type: String,
+      enum: [Roles.SUPER_ADMIN, Roles.ADMIN],
+      default: Roles.ADMIN,
+      immutable: true,
+    },
     name: { type: String, trim: true, default: '' },
     active: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },
@@ -28,5 +30,6 @@ export type Admin = InferSchemaType<typeof adminSchema>;
 export type AdminDoc = HydratedDocument<Admin>;
 
 applyBaseTransforms(adminSchema);
+applyFieldEncryption(adminSchema, [{ field: 'mobile', hash: 'mobileHash', unique: true }]);
 
 export const AdminModel = model('Admin', adminSchema);

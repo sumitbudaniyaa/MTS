@@ -20,10 +20,22 @@ movieRouter.use(authenticate);
 // SCANNER-facing: movies relevant for door verification.
 movieRouter.get('/scanner', authorize(Roles.SCANNER, Roles.ADMIN), ctrl.listScannerMovies);
 
-// ADMIN management.
+// Reads: both admin tiers (super admin gets a read-only view of movies).
+movieRouter.get(
+  '/',
+  authorize(Roles.ADMIN, Roles.SUPER_ADMIN),
+  validate({ query: movieListQuerySchema }),
+  ctrl.listMovies,
+);
+movieRouter.get(
+  '/:id',
+  authorize(Roles.ADMIN, Roles.SUPER_ADMIN),
+  validate({ params: idParamSchema }),
+  ctrl.getMovie,
+);
+
+// Writes: operational ADMIN only — super admins cannot create/edit/delete movies.
 movieRouter.post('/', authorize(Roles.ADMIN), validate({ body: createMovieSchema }), ctrl.createMovie);
-movieRouter.get('/', authorize(Roles.ADMIN), validate({ query: movieListQuerySchema }), ctrl.listMovies);
-movieRouter.get('/:id', authorize(Roles.ADMIN), validate({ params: idParamSchema }), ctrl.getMovie);
 movieRouter.patch(
   '/:id',
   authorize(Roles.ADMIN),

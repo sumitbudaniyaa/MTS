@@ -40,7 +40,19 @@ function clearRefreshCookie(res: Response): void {
 
 export const loginController = asyncHandler(async (req: Request, res: Response) => {
   const { mobile, password, role } = req.body as LoginInput;
-  const result = await login(mobile, password, req, role);
+  let result;
+  try {
+    result = await login(mobile, password, req, role);
+  } catch (err) {
+    // Record the failed attempt (never the password) for brute-force visibility, then rethrow.
+    await recordAudit({
+      action: AuditAction.LOGIN_FAILED,
+      req,
+      success: false,
+      metadata: { mobile, audience: role ?? null },
+    });
+    throw err;
+  }
   setRefreshCookie(res, result.refresh);
   await recordAudit({
     action: AuditAction.LOGIN,

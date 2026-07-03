@@ -192,3 +192,35 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       rank-bypass): when true, all ranks may book any seat regardless of `allowedRanks`.
 - [x] Updated domain test for new visibility/bookingOpen semantics. **18/18 tests green.**
 - [x] All four apps verified: tsc clean, eslint clean, vite build succeeds.
+
+## Latest session — booking window, auth hardening, movie detail, two-tier admin
+- [x] User seat picker: **rapid double-tap de-dupe** (in-flight `pendingRef` + idempotent
+      select) so double-tapping a seat can't register it twice.
+- [x] Movies carry **`durationMinutes`** (endTime = start + duration); **booking stays open
+      until the show ends** (`isMovieVisible` upper bound; `listVisibleMovies` keeps a movie
+      listed until endTime). Admin movie form has a Duration field.
+- [x] **No-show expiry frees the actual seats** (MovieSeat BOOKED→FREE + live broadcast) at
+      `startTime + NO_SHOW_GRACE_MINUTES`, so walk-ins can re-book freed seats mid-show.
+- [x] **Per-collection mobile uniqueness** + **role-scoped login** (each app sends its role):
+      the same mobile can be an admin, a scanner AND a user independently.
+- [x] **Logout-on-refresh fixed (all 3 apps):** root cause was `Domain=localhost` on the
+      refresh cookie (browsers reject it). Cookie is now **host-only**; env default blanked.
+      Hardening: shared deduped `refreshSession()` across bootstrap + 401 interceptor.
+- [x] Admin **per-movie Details dialog** (eye icon) — seat layout with who booked each seat
+      (mobile/rank/unit) + checked-in state + bookings list (`GET /seating/movies/:id/detail`).
+- [x] **Booking throughput/contention benchmark** (`test/loadtest.test.ts`): ~467 bookings/sec
+      no-contention, 300-user stampede on 10 seats → exactly 10 win, 0 oversell.
+- [x] **Two-tier admin (separation of duties):** `SUPER_ADMIN` (units/personnel/admins; read-only
+      movies/auditorium) vs `ADMIN` (movies/auditorium/ops + scanner operators; read-only
+      units/USER-personnel). Personnel writes enforced by target role (USER=super only,
+      SCANNER=both). Seed = SUPER_ADMIN; admins created with a tier selector. Role-aware admin
+      UI hides controls (`lib/role.ts`). **20/20 tests, all apps build + lint clean.**
+- [x] **Security hardening** (all High/Medium from the audit): log redaction (no tokens/cookies),
+      refresh-token **reuse detection** (30 s grace → revoke family), rate limits keyed by
+      mobile/user (shared-NAT safe), regex-escaped search, **authenticated socket handshake**,
+      failed-login audit + 8-char password minimum, HS256-pinned JWTs, root `.gitignore`.
+- [x] **At-rest field encryption** (`utils/fieldCrypto.ts`): mobiles (admins/scanners/users +
+      spouse) and unit names stored **AES-256-GCM** + keyed **HMAC blind index** for lookup/
+      uniqueness; Mongoose getter decrypts on read, save/insertMany hook seals on write; login,
+      spouse login and uniqueness work via `*Hash`; search on those fields is exact-match. New
+      `FIELD_ENCRYPTION_KEY` env var. **23/23 tests** (added at-rest encryption + reuse tests).

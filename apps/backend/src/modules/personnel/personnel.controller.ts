@@ -1,8 +1,10 @@
 import type { Request, Response } from 'express';
 import { asyncHandler } from '../../utils/asyncHandler.js';
+import { ApiError } from '../../utils/apiError.js';
 import { AuditAction } from '../../constants/enums.js';
 import { recordAudit } from '../audit/audit.service.js';
 import { buildMeta } from '../../utils/pagination.js';
+import { Roles, type Role } from '../../types/index.js';
 import * as svc from './personnel.service.js';
 import { personnelListQuerySchema } from './personnel.schema.js';
 import type {
@@ -11,8 +13,22 @@ import type {
   UpdatePersonnelInput,
 } from './personnel.schema.js';
 
+/**
+ * Fine-grained rule: operational ADMINs may manage SCANNER operators, but only a SUPER_ADMIN
+ * may create/change/delete USER personnel. `targetRole` is the role of the account being
+ * written (USER or SCANNER).
+ */
+function assertCanManage(principalRole: Role | undefined, targetRole: Role): void {
+  if (targetRole === Roles.SCANNER) return; // scanner operators: both admin tiers
+  if (principalRole !== Roles.SUPER_ADMIN) {
+    throw ApiError.forbidden('Only a super admin can manage personnel');
+  }
+}
+
 export const createPersonnel = asyncHandler(async (req: Request, res: Response) => {
-  const user = await svc.createPersonnel(req.body as CreatePersonnelInput);
+  const body = req.body as CreatePersonnelInput;
+  assertCanManage(req.principal?.role, body.role === Roles.SCANNER ? Roles.SCANNER : Roles.USER);
+  const user = await svc.createPersonnel(body);
   await recordAudit({
     action: AuditAction.PERSONNEL_CREATE,
     req,
@@ -22,6 +38,8 @@ export const createPersonnel = asyncHandler(async (req: Request, res: Response) 
 });
 
 export const bulkCreatePersonnel = asyncHandler(async (req: Request, res: Response) => {
+  // Bulk import is always USER personnel — super admin only.
+  assertCanManage(req.principal?.role, Roles.USER);
   const result = await svc.createPersonnelBulk(req.body as BulkPersonnelInput);
   await recordAudit({
     action: AuditAction.PERSONNEL_CREATE,
@@ -46,11 +64,15 @@ export const getPersonnel = asyncHandler(async (req: Request, res: Response) => 
 });
 
 export const updatePersonnel = asyncHandler(async (req: Request, res: Response) => {
+  const existing = await svc.getPersonnel(req.params.id as string);
+  assertCanManage(req.principal?.role, existing.role as Role);
   const user = await svc.updatePersonnel(req.params.id as string, req.body as UpdatePersonnelInput);
   res.json({ personnel: svc.toPersonnelView(user) });
 });
 
 export const deletePersonnel = asyncHandler(async (req: Request, res: Response) => {
+  const existing = await svc.getPersonnel(req.params.id as string);
+  assertCanManage(req.principal?.role, existing.role as Role);
   await svc.deletePersonnel(req.params.id as string);
   res.json({ success: true });
 });

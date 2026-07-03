@@ -12,7 +12,10 @@ import type { AuthPrincipal } from '../types/index.js';
  */
 
 export function signAccessToken(principal: AuthPrincipal): string {
-  const options: SignOptions = { expiresIn: env.ACCESS_TOKEN_TTL as SignOptions['expiresIn'] };
+  const options: SignOptions = {
+    expiresIn: env.ACCESS_TOKEN_TTL as SignOptions['expiresIn'],
+    algorithm: 'HS256',
+  };
   return jwt.sign(
     { role: principal.role, unit: principal.unit ?? null },
     env.JWT_ACCESS_SECRET,
@@ -21,7 +24,10 @@ export function signAccessToken(principal: AuthPrincipal): string {
 }
 
 export function verifyAccessToken(token: string): AuthPrincipal {
-  const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as jwt.JwtPayload;
+  // Pin the algorithm so a token can't be forced through a different (or `none`) algorithm.
+  const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET, {
+    algorithms: ['HS256'],
+  }) as jwt.JwtPayload;
   return {
     sub: String(decoded.sub),
     role: decoded.role,

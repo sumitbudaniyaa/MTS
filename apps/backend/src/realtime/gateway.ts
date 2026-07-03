@@ -2,6 +2,7 @@ import type { Server as HttpServer } from 'node:http';
 import { Server as IOServer } from 'socket.io';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
+import { verifyAccessToken } from '../utils/jwt.js';
 
 /**
  * Real-time seat map. Clients join a per-movie room (`movie:<id>`) and receive `seats:update`
@@ -13,6 +14,21 @@ export function initRealtime(httpServer: HttpServer): void {
   io = new IOServer(httpServer, {
     cors: { origin: env.CORS_ORIGINS, credentials: true },
     path: '/socket.io',
+  });
+
+  // Authenticated handshake: the client passes its access token in `auth.token`. Rejecting
+  // unauthenticated sockets keeps the live seat map from being observed by anonymous clients.
+  io.use((socket, next) => {
+    const token = (socket.handshake.auth as { token?: unknown } | undefined)?.token;
+    if (typeof token !== 'string' || token.length === 0) {
+      return next(new Error('unauthorized'));
+    }
+    try {
+      verifyAccessToken(token);
+      next();
+    } catch {
+      next(new Error('unauthorized'));
+    }
   });
 
   io.on('connection', (socket) => {

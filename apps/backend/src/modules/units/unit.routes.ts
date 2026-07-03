@@ -8,15 +8,18 @@ import * as ctrl from './unit.controller.js';
 
 export const unitRouter = Router();
 
-// All unit management is ADMIN-only.
-unitRouter.use(authenticate, authorize(Roles.ADMIN));
+unitRouter.use(authenticate);
 
-unitRouter.post('/', validate({ body: createUnitSchema }), ctrl.createUnit);
-unitRouter.get('/', validate({ query: listQuerySchema }), ctrl.listUnits);
-unitRouter.get('/:id', validate({ params: idParamSchema }), ctrl.getUnit);
+// Reads: both admin tiers.
+unitRouter.get('/', authorize(Roles.ADMIN, Roles.SUPER_ADMIN), validate({ query: listQuerySchema }), ctrl.listUnits);
+unitRouter.get('/:id', authorize(Roles.ADMIN, Roles.SUPER_ADMIN), validate({ params: idParamSchema }), ctrl.getUnit);
+
+// Writes: SUPER_ADMIN only — operational admins are read-only on units.
+unitRouter.post('/', authorize(Roles.SUPER_ADMIN), validate({ body: createUnitSchema }), ctrl.createUnit);
 unitRouter.patch(
   '/:id',
+  authorize(Roles.SUPER_ADMIN),
   validate({ params: idParamSchema, body: updateUnitSchema }),
   ctrl.updateUnit,
 );
-unitRouter.delete('/:id', validate({ params: idParamSchema }), ctrl.deleteUnit);
+unitRouter.delete('/:id', authorize(Roles.SUPER_ADMIN), validate({ params: idParamSchema }), ctrl.deleteUnit);

@@ -2,9 +2,11 @@ import type { FilterQuery } from 'mongoose';
 import { UnitModel, UserModel, type UnitDoc } from '../../models/index.js';
 import { ApiError } from '../../utils/apiError.js';
 import { buildMeta, type ListQuery, type Paginated } from '../../utils/pagination.js';
+import { blindIndex } from '../../utils/fieldCrypto.js';
 
 export async function createUnit(input: { name: string }): Promise<UnitDoc> {
-  const exists = await UnitModel.findOne({ name: input.name });
+  // Uniqueness is on the encrypted name's blind index (ciphertext isn't comparable).
+  const exists = await UnitModel.findOne({ nameHash: blindIndex(input.name) });
   if (exists) throw ApiError.conflict('A unit with this name already exists');
   return UnitModel.create({ name: input.name });
 }
@@ -12,7 +14,8 @@ export async function createUnit(input: { name: string }): Promise<UnitDoc> {
 export async function listUnits(query: ListQuery): Promise<Paginated<UnitDoc>> {
   const filter: FilterQuery<UnitDoc> = {};
   if (query.search) {
-    filter.name = { $regex: query.search, $options: 'i' };
+    // Encrypted name → exact-match search via the blind index (no substring search).
+    filter.nameHash = blindIndex(query.search);
   }
   const [items, total] = await Promise.all([
     UnitModel.find(filter)

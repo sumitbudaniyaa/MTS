@@ -13,19 +13,22 @@ export const adminRouter = Router();
 
 const createAdminSchema = z.object({
   mobile: z.string().regex(/^\d{10}$/, 'Mobile must be 10 digits'),
-  password: z.string().min(6).max(128),
+  password: z.string().min(8).max(128),
   name: z.string().trim().max(80).optional(),
+  // Which tier to create. Defaults to an operational ADMIN.
+  role: z.enum([Roles.ADMIN, Roles.SUPER_ADMIN]).optional(),
 });
 
 const updateAdminSchema = z.object({
   name: z.string().trim().max(80).optional(),
   active: z.boolean().optional(),
-  password: z.string().min(6).max(128).optional(),
+  password: z.string().min(8).max(128).optional(),
 });
 
 const idParamSchema = z.object({ id: z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id') });
 
-adminRouter.use(authenticate, authorize(Roles.ADMIN));
+// Managing admin accounts is SUPER_ADMIN only.
+adminRouter.use(authenticate, authorize(Roles.SUPER_ADMIN));
 
 // List administrators.
 adminRouter.get(
@@ -41,7 +44,7 @@ adminRouter.post(
   '/',
   validate({ body: createAdminSchema }),
   asyncHandler(async (req, res) => {
-    const { mobile, password, name } = req.body as z.infer<typeof createAdminSchema>;
+    const { mobile, password, name, role } = req.body as z.infer<typeof createAdminSchema>;
     if (await mobileTaken(mobile, Roles.ADMIN)) {
       throw ApiError.conflict('An account with this mobile already exists');
     }
@@ -49,6 +52,7 @@ adminRouter.post(
       mobile,
       passwordHash: await hashPassword(password),
       name: name ?? '',
+      role: role ?? Roles.ADMIN,
     });
     res.status(201).json({ admin });
   }),
@@ -78,10 +82,14 @@ adminRouter.delete(
     if (req.params.id === req.principal?.sub) {
       throw ApiError.conflict('You cannot delete your own account');
     }
-    const count = await AdminModel.countDocuments({});
-    if (count <= 1) throw ApiError.conflict('At least one administrator is required');
-    const deleted = await AdminModel.findByIdAndDelete(req.params.id);
-    if (!deleted) throw ApiError.notFound('Administrator not found');
+    const target = await AdminModel.findById(req.params.id);
+    if (!target) throw ApiError.notFound('Administrator not found');
+    // Never leave the system without a super admin (only they can manage admin accounts).
+    if (target.role === Roles.SUPER_ADMIN) {
+      const superCount = await AdminModel.countDocuments({ role: Roles.SUPER_ADMIN });
+      if (superCount <= 1) throw ApiError.conflict('At least one super admin is required');
+    }
+    await target.deleteOne();
     res.json({ success: true });
   }),
 );

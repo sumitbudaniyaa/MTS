@@ -1,4 +1,8 @@
 export const Roles = {
+  // Top account: manages units, personnel and admin accounts; read-only on movies/auditorium.
+  SUPER_ADMIN: 'SUPER_ADMIN',
+  // Operational admin (created by a super admin): manages movies/auditorium/bookings and can
+  // manage scanner operators, but is read-only on units and USER personnel.
   ADMIN: 'ADMIN',
   USER: 'USER',
   SCANNER: 'SCANNER',

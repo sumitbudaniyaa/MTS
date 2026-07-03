@@ -12,6 +12,7 @@ export type LoginInput = z.infer<typeof loginSchema>;
 
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1).max(128),
-  newPassword: z.string().min(6).max(128),
+  // New passwords must be at least 8 chars (login still accepts existing 6-char passwords).
+  newPassword: z.string().min(8).max(128),
 });
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
