@@ -40,6 +40,14 @@ function hasStarted(m: Movie): boolean {
   return Date.now() >= new Date(m.startTime).getTime();
 }
 
+// A finished show has nothing left to act on: its quota is spent, edit and delete are already
+// locked by the booking window, and "open to all" can't change a screening that is over. The
+// row keeps only View, which is what an admin actually wants there — who sat where.
+const FINISHED: MovieStatus[] = ['COMPLETED', 'CLOSED', 'CANCELLED'];
+function isFinished(m: Movie): boolean {
+  return FINISHED.includes(m.status);
+}
+
 // Convert an ISO timestamp to the value a <input type="datetime-local"> expects.
 function toLocalInput(iso: string): string {
   const d = new Date(iso);
@@ -135,7 +143,7 @@ export function MoviesPage() {
                         <Eye className="h-3.5 w-3.5" />
                       </Button>
                     </Tooltip>
-                    {canManageMovies && (
+                    {canManageMovies && !isFinished(m) && (
                       <>
                         <Button
                           size="sm"

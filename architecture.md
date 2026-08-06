@@ -200,12 +200,11 @@ deployment.
 ### 3.6.2 Movie lifecycle (`MovieStatus`)
 
 ```
-DRAFT ──allocations complete──> SCHEDULED ──window opens──> OPEN ──startTime──> POOL_RELEASED
-                                                                                     │
-                                                                                  end time
-                                                                                     ↓
-                                                                                 COMPLETED
-        CLOSED / CANCELLED  ←── admin, from any pre-show state ──┘
+                                                     ┌─ openToAll ─> POOL_RELEASED ─┐
+DRAFT ─allocations─> SCHEDULED ─window opens─> OPEN ──┤       (at startTime)         ├─> COMPLETED
+                                                      └─ otherwise, stays OPEN ──────┘   (end time)
+
+        CLOSED / CANCELLED  <── admin, from any pre-show state
 ```
 
 | Status | Set by | Meaning |
@@ -213,9 +212,12 @@ DRAFT ──allocations complete──> SCHEDULED ──window opens──> OPEN
 | `DRAFT` | schema default on create | Created, not yet allocated. Not listed, not bookable. |
 | `SCHEDULED` | `seat.service.setAllocations` once allocations equal capacity (or set directly by an admin) | Ready, waiting for its booking window. |
 | `OPEN` | `jobs/openBooking.job.ts` at `startTime − visibilityLeadMinutes` | Booking window is live. |
-| `POOL_RELEASED` | `jobs/openPool.job.ts` at `startTime` | Unused unit quota has moved to the common pool; anyone may book what's left. |
+| `POOL_RELEASED` | `jobs/openPool.job.ts` at `startTime`, **only if `openToAll`** | Unused unit quota has moved to the common pool; anyone may book what's left. A restricted movie never reaches this state. |
 | `COMPLETED` | `jobs/reclaim.job.ts`, post-show sweep | Ran to its end time and has been retired. Terminal. |
 | `CLOSED` / `CANCELLED` | admin, via `PATCH /movies/:id` | Ended early / called off. Terminal. |
+
+`POOL_RELEASED` is **not** on every movie's path. Dissolving the unit split is an admin
+decision (the "Open to all" toggle), not something the clock does on its own — see §3.7.
 
 Two rules keep this honest:
 
@@ -229,7 +231,14 @@ Two rules keep this honest:
   check would wave the edit through and re-cut quota that has already been given away.
 
 ### 3.7 Scheduled Jobs (node-cron)
-- **Open-pool release:** at `movie.startTime`, move each unit's unbooked quota into `poolSeats`.
+- **Open-pool release** (`jobs/openPool.job.ts`): at `movie.startTime`, move each unit's
+  unbooked quota into `poolSeats`. **Opt-in — only for movies marked "Open to all"**
+  (`openToAll`). It used to fire for every movie, which silently dissolved the per-unit split on
+  every show; handing one unit's unused seats to everyone is a decision, so it takes the admin
+  pressing the button. A restricted movie keeps its quota for its whole run and never reaches
+  `POOL_RELEASED`. Flipping the toggle on later arms it, and the release happens on the next
+  tick — including mid-show. The reclaim job matches this: a no-show seat is always freed on
+  the live map, but it is only credited to `poolSeats` when the movie actually has a pool.
 - **Booking-window open** (`jobs/openBooking.job.ts`): flips `SCHEDULED → OPEN` once
   `startTime − visibilityLeadMinutes` passes, so a show that is actively selling stops being
   reported as merely scheduled. Display only — see §3.6.2. Runs *after* the pool release on each

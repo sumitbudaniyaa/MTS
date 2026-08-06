@@ -92,9 +92,13 @@ export async function reclaimUnclaimedSeats(now: Date = new Date()): Promise<num
               { session: session ?? undefined },
             );
           }
-          // Keep the pool counters coherent as well.
+          // Keep the pool counters coherent as well. The seat itself is freed on the live map
+          // either way (above) — but it only joins the *common pool* if this movie has one.
+          // A movie the admin never opened to all keeps its per-unit split, and crediting the
+          // pool there would invent common-pool seats that no pool release ever created, and
+          // report them as such.
           movie.seatsBooked = Math.max(0, movie.seatsBooked - reclaimed);
-          movie.poolSeats += reclaimed;
+          if (movie.status === MovieStatus.POOL_RELEASED) movie.poolSeats += reclaimed;
         }
         // Only the post-show sweep retires the movie; until then it stays in the rotation.
         // Retiring also moves it to its terminal status, so a finished show stops presenting

@@ -347,3 +347,31 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       (rounded shoulders, flat base), row letters in both gutters, and lifted/ringed selected
       seats. Taken seats went from near-black to a muted `fg/25` so the eye lands on what's
       still free.
+- [x] **Open-pool release is now opt-in, tied to the "Open to all" button.** It fired at
+      showtime for *every* movie, which quietly dissolved the per-unit split on every single
+      show — the thing the allocations exist to express — and reported a "Common pool" figure
+      for movies nobody had ever opened up. `releaseOpenPool` now requires `openToAll`, re-checked
+      inside the transaction in case the admin toggles it back off mid-tick. A restricted movie
+      keeps its quota for its whole run and never reaches `POOL_RELEASED`; flipping the toggle
+      on later arms it for the next tick, including mid-show. The reclaim job was corrected to
+      match: a no-show seat is always freed on the live map, but is only credited to `poolSeats`
+      when the movie actually has a pool, so the report can't invent common-pool seats that no
+      release ever created. **34/34 tests** (added: a movie never opened to all is left on its
+      unit quota, then releases once the toggle flips).
+- [x] **`clearCookie` never actually deleted the refresh cookie.** It passed `expires: undefined`,
+      and Express merges the caller's options *over* its own `new Date(1)` default via
+      utils-merge — an own property holding `undefined` still wins, so the attribute was dropped
+      and the "delete" became an empty **session** cookie that lingered for the whole browser
+      session. Now passes no `expires` key at all and lets Express expire it (also silences an
+      Express deprecation warning that fired on every logout).
+- [x] **Cookie misconfiguration can no longer fail silently.** `SameSite=None` without `Secure`
+      is discarded by every browser, and a `Strict`/`Lax` cookie is never sent back from a
+      cross-site frontend — both look exactly like "the app logs me out when I refresh", with
+      nothing in the logs. Boot now refuses to start on `SAMESITE=none` + `SECURE=false` (and on
+      `COOKIE_DOMAIN=localhost`), and login detects the cross-site case precisely from the
+      request itself — comparing the caller's `Origin` against the API's own `Host` — warning
+      once per process with the exact fix.
+- [x] **Finished movies keep only the View action** in the admin movie list. For `COMPLETED`,
+      `CLOSED` and `CANCELLED` there is nothing left to act on — quota is spent, edit and delete
+      are already locked by the booking window, and "Open to all" can't change a screening that
+      is over — so the row shows the eye alone.

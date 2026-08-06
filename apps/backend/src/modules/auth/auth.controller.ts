@@ -2,6 +2,7 @@ import type { CookieOptions, Request, Response } from 'express';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { ApiError } from '../../utils/apiError.js';
 import { env } from '../../config/env.js';
+import { logger } from '../../config/logger.js';
 import { AuditAction } from '../../constants/enums.js';
 import { recordAudit } from '../audit/audit.service.js';
 import type { IssuedRefreshToken } from '../../utils/jwt.js';
@@ -38,15 +39,66 @@ const cookieDomain =
     ? env.COOKIE_DOMAIN
     : undefined;
 
-function refreshCookieOptions(expiresAt: Date): CookieOptions {
+/** Everything that identifies the cookie. A delete must match these exactly or it misses. */
+function baseCookieOptions(): CookieOptions {
   return {
     httpOnly: true,
     secure: env.COOKIE_SECURE,
     sameSite: env.COOKIE_SAMESITE,
     domain: cookieDomain,
     path: '/api/v1/auth',
-    expires: expiresAt,
   };
+}
+
+function refreshCookieOptions(expiresAt: Date): CookieOptions {
+  return { ...baseCookieOptions(), expires: expiresAt };
+}
+
+/**
+ * Approximate registrable domain (last two labels). Good enough to tell `app.example.com` and
+ * `api.example.com` apart from `xyz.vercel.app` and `abc.onrender.com`; a multi-part public
+ * suffix like `.co.uk` would need the real Public Suffix List, but erring toward "same site"
+ * there only costs us a missed warning, never a false alarm.
+ */
+function siteOf(host: string): string {
+  const name = host.split(':')[0]!.toLowerCase();
+  const labels = name.split('.');
+  return labels.length <= 2 ? name : labels.slice(-2).join('.');
+}
+
+let warnedCrossSite = false;
+
+/**
+ * A `SameSite=Strict`/`Lax` cookie is never sent back on a cross-site request, so if the app
+ * calling us lives on a different site than this API, the session dies on the next reload —
+ * login succeeds, the cookie is stored, and the browser then refuses to send it. That looks
+ * exactly like "the app logs me out when I refresh", with nothing in the logs to explain it.
+ *
+ * We can detect it precisely, because the request carries both sides: the caller's `Origin`
+ * and our own `Host`. Warn once per process rather than per login.
+ */
+function warnIfCookieWillNotComeBack(req: Request): void {
+  if (warnedCrossSite || env.COOKIE_SAMESITE === 'none') return;
+  const origin = req.get('origin');
+  const host = req.get('host');
+  if (!origin || !host) return;
+
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    return;
+  }
+  if (siteOf(originHost) === siteOf(host)) return;
+
+  warnedCrossSite = true;
+  logger.warn(
+    { origin, apiHost: host, sameSite: env.COOKIE_SAMESITE, secure: env.COOKIE_SECURE },
+    '[auth] cross-site frontend with SameSite=' +
+      env.COOKIE_SAMESITE +
+      ': the browser will NOT send the refresh cookie back, so every reload will log the user ' +
+      'out. Set COOKIE_SAMESITE=none and COOKIE_SECURE=true (both required together).',
+  );
 }
 
 function setRefreshCookie(res: Response, role: Role, refresh: IssuedRefreshToken): void {
@@ -54,7 +106,12 @@ function setRefreshCookie(res: Response, role: Role, refresh: IssuedRefreshToken
 }
 
 function clearCookieNamed(res: Response, name: string): void {
-  res.clearCookie(name, { ...refreshCookieOptions(new Date()), expires: undefined });
+  // No `expires` key at all: Express supplies a past date itself. The previous code passed
+  // `expires: undefined`, and because Express merges the caller's options *over* its default
+  // via utils-merge, an own property holding `undefined` still wins — dropping the attribute
+  // and turning the delete into an empty **session** cookie that lingers for the whole
+  // browser session instead of disappearing.
+  res.clearCookie(name, baseCookieOptions());
 }
 
 export const loginController = asyncHandler(async (req: Request, res: Response) => {
@@ -73,6 +130,7 @@ export const loginController = asyncHandler(async (req: Request, res: Response) 
     throw err;
   }
   setRefreshCookie(res, result.user.role, result.refresh);
+  warnIfCookieWillNotComeBack(req);
   // Drop any cookie left over from the single shared-slot scheme so it can't shadow the
   // per-app one on the next refresh.
   clearCookieNamed(res, LEGACY_REFRESH_COOKIE);

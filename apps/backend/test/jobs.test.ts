@@ -29,6 +29,7 @@ describe('open-pool release (M6)', () => {
       totalSeats: 5,
       seatsBooked: 2,
       status: MovieStatus.SCHEDULED,
+      openToAll: true, // admin pressed "Open to all" — the only thing that arms the release
     });
     await SeatAllocationModel.create({
       movie: movie._id,
@@ -50,6 +51,39 @@ describe('open-pool release (M6)', () => {
     // Idempotent — second run does nothing.
     const again = await releaseOpenPool(new Date());
     expect(again).toBe(0);
+    expect((await MovieModel.findById(movie._id))?.poolSeats).toBe(3);
+  });
+
+  it('leaves a movie that was never opened to all on its unit quota', async () => {
+    const unit = await UnitModel.create({ name: 'Armoured', code: 'ARM' });
+    const movie = await MovieModel.create({
+      title: 'Restricted',
+      showDate: new Date(Date.now() - 60_000),
+      startTime: new Date(Date.now() - 60_000), // started: due in every respect but one
+      totalSeats: 5,
+      seatsBooked: 2,
+      status: MovieStatus.SCHEDULED,
+      // openToAll defaults to false — the admin never pressed the button.
+    });
+    await SeatAllocationModel.create({
+      movie: movie._id,
+      unit: unit._id,
+      allocated: 5,
+      booked: 2,
+    });
+
+    expect(await releaseOpenPool(new Date())).toBe(0);
+
+    const fresh = await MovieModel.findById(movie._id);
+    expect(fresh?.status).toBe(MovieStatus.SCHEDULED); // never reaches POOL_RELEASED
+    expect(fresh?.poolSeats).toBe(0);
+    expect(fresh?.poolReleasedAt).toBeNull();
+    // The unit keeps its 3 unused seats.
+    expect((await SeatAllocationModel.findOne({ movie: movie._id }))?.released).toBe(0);
+
+    // Flipping the switch later arms it — the release happens on the next tick.
+    await MovieModel.updateOne({ _id: movie._id }, { $set: { openToAll: true } });
+    expect(await releaseOpenPool(new Date())).toBe(1);
     expect((await MovieModel.findById(movie._id))?.poolSeats).toBe(3);
   });
 });

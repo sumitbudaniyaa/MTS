@@ -39,6 +39,7 @@ const EnvSchema = z.object({
   // (e.g. free split hosting: app on Netlify, API on Render). 'none' requires Secure=true.
   COOKIE_SAMESITE: z.enum(['strict', 'lax', 'none']).default('strict'),
 
+
   BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
 
   // Seed values for the runtime-editable operational settings (see config/settings.ts). They
@@ -54,8 +55,39 @@ const EnvSchema = z.object({
 
 export type AppEnv = z.infer<typeof EnvSchema>;
 
+/**
+ * Cookie attributes the browser will actually accept.
+ *
+ * `SameSite=None` without `Secure` is **silently discarded** by every current browser: the
+ * Set-Cookie is simply never stored, so login appears to work and the session then evaporates
+ * on the next reload. Nothing in the server logs shows it, so this has to be caught at boot.
+ */
+function assertCookieConfig(cfg: AppEnv): string[] {
+  const errors: string[] = [];
+  if (cfg.COOKIE_SAMESITE === 'none' && !cfg.COOKIE_SECURE) {
+    errors.push(
+      'COOKIE_SAMESITE=none requires COOKIE_SECURE=true — browsers discard a None cookie ' +
+        'that is not Secure, so every app would log out on refresh.',
+    );
+  }
+  if (cfg.COOKIE_DOMAIN && cfg.COOKIE_DOMAIN.toLowerCase() === 'localhost') {
+    errors.push('COOKIE_DOMAIN=localhost is rejected by browsers — leave it blank instead.');
+  }
+  return errors;
+}
+
 function loadEnv(): AppEnv {
   const parsed = EnvSchema.safeParse(process.env);
+  if (parsed.success) {
+    const cookieErrors = assertCookieConfig(parsed.data);
+    if (cookieErrors.length > 0) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `\n[config] Invalid cookie configuration:\n${cookieErrors.map((e) => `  - ${e}`).join('\n')}\n`,
+      );
+      process.exit(1);
+    }
+  }
   if (!parsed.success) {
     // Fail fast with a readable message; never start with bad config.
     const issues = parsed.error.issues
