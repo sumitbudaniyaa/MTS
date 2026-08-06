@@ -3,7 +3,7 @@ import { BookingModel, MovieModel, MovieSeatModel, movieEndTime } from '../model
 import { MovieStatus, SeatStatus, TicketStatus } from '../constants/enums.js';
 import { settings } from '../config/settings.js';
 import { logger } from '../config/logger.js';
-import { broadcastSeats } from '../realtime/gateway.js';
+import { broadcastMovie, broadcastSeats, type MovieUpdate } from '../realtime/gateway.js';
 
 /**
  * Reclaims seats whose holder never checked in, and frees them on the live map so someone
@@ -42,6 +42,7 @@ export async function reclaimUnclaimedSeats(now: Date = new Date()): Promise<num
   let reclaimedTotal = 0;
   for (const { _id } of due) {
     let freedLabels: string[] = [];
+    let moviePatch: MovieUpdate | null = null;
     try {
       await runInTransaction(async (session) => {
         const movie = await MovieModel.findById(_id).session(session ?? null);
@@ -111,6 +112,14 @@ export async function reclaimUnclaimedSeats(now: Date = new Date()): Promise<num
 
         reclaimedTotal += reclaimed;
         freedLabels = labels;
+        // Seat counters move on every sweep; the status only on the final post-show one.
+        if (reclaimed > 0 || ended) {
+          moviePatch = {
+            seatsBooked: movie.seatsBooked,
+            poolSeats: movie.poolSeats,
+            ...(ended ? { status: MovieStatus.COMPLETED } : {}),
+          };
+        }
         if (reclaimed > 0) {
           logger.info({ movieId: String(_id), noShows, released }, '[job] seats reclaimed');
         }
@@ -123,6 +132,7 @@ export async function reclaimUnclaimedSeats(now: Date = new Date()): Promise<num
           freedLabels.map((label) => ({ label, status: 'FREE' as const })),
         );
       }
+      if (moviePatch) broadcastMovie(String(_id), moviePatch);
     } catch (err) {
       logger.error({ err, movieId: String(_id) }, '[job] seat reclaim failed');
     }

@@ -15,7 +15,7 @@ import {
 import { ApiError } from '../../utils/apiError.js';
 import { generateTicketCode } from '../../utils/ids.js';
 import { recordAudit } from '../audit/audit.service.js';
-import { broadcastSeats } from '../../realtime/gateway.js';
+import { broadcastMovie, broadcastSeats } from '../../realtime/gateway.js';
 import { AuditAction, MovieStatus, SeatStatus, TicketStatus, type RankType } from '../../constants/enums.js';
 import { Roles } from '../../types/index.js';
 import { settings } from '../../config/settings.js';
@@ -85,6 +85,7 @@ export async function setMovieOpenToAll(movieId: string, open: boolean): Promise
   if (!movie) throw ApiError.notFound('Movie not found');
   movie.openToAll = open;
   await movie.save();
+  broadcastMovie(movie.id, { openToAll: movie.openToAll });
   return movie.openToAll;
 }
 
@@ -415,7 +416,14 @@ export async function bookSeats(args: {
       { movie: movieId, label: { $in: claimed } },
       { $set: { booking: booking!._id } },
     );
-    await MovieModel.updateOne({ _id: movie._id }, { $inc: { seatsBooked: claimed.length } });
+    const after = await MovieModel.findOneAndUpdate(
+      { _id: movie._id },
+      { $inc: { seatsBooked: claimed.length } },
+      { new: true, projection: 'seatsBooked' },
+    );
+    // The first booking is what permanently removes the admin's delete button, so the console
+    // needs to see this without a reload.
+    if (after) broadcastMovie(movie.id, { seatsBooked: after.seatsBooked });
   } catch (err) {
     await rollback(userId, movieId, claimed);
     if (typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000) {

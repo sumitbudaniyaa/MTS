@@ -3,6 +3,10 @@ import { Server as IOServer } from 'socket.io';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { verifyAccessToken } from '../utils/jwt.js';
+import { Roles } from '../types/index.js';
+
+/** Room every admin console joins to watch movies change state in real time. */
+const ADMIN_ROOM = 'admin:movies';
 
 /**
  * Real-time seat map. Clients join a per-movie room (`movie:<id>`) and receive `seats:update`
@@ -24,7 +28,10 @@ export function initRealtime(httpServer: HttpServer): void {
       return next(new Error('unauthorized'));
     }
     try {
-      verifyAccessToken(token);
+      const principal = verifyAccessToken(token);
+      // Kept for the admin room below: the seat map is fine for any signed-in user, but the
+      // admin feed carries operational counters and must not be joinable by one.
+      socket.data.role = principal.role;
       next();
     } catch {
       next(new Error('unauthorized'));
@@ -40,6 +47,13 @@ export function initRealtime(httpServer: HttpServer): void {
     socket.on('movie:leave', (movieId: unknown) => {
       if (typeof movieId === 'string') void socket.leave(`movie:${movieId}`);
     });
+
+    // Admin console feed: movie status and seat counters, for every movie at once.
+    socket.on('admin:join', () => {
+      const role = socket.data.role as string | undefined;
+      if (role === Roles.ADMIN || role === Roles.SUPER_ADMIN) void socket.join(ADMIN_ROOM);
+    });
+    socket.on('admin:leave', () => void socket.leave(ADMIN_ROOM));
   });
 
   logger.info('[realtime] socket.io initialized');
@@ -54,4 +68,23 @@ export interface SeatUpdate {
 /** Broadcast seat changes to everyone viewing a movie's seat map. */
 export function broadcastSeats(movieId: string, seats: SeatUpdate[]): void {
   io?.to(`movie:${movieId}`).emit('seats:update', { movieId, seats });
+}
+
+/** Fields of a movie an admin console cares about seeing change without reloading. */
+export interface MovieUpdate {
+  status?: string;
+  seatsBooked?: number;
+  poolSeats?: number;
+  openToAll?: boolean;
+}
+
+/**
+ * Tell every open admin console that a movie changed.
+ *
+ * Most of these transitions are made by the cron jobs rather than by a person, so without this
+ * an admin watching the list sees a stale status until they happen to reload — the show starts,
+ * the badge doesn't move, and the page quietly lies about what the system is doing.
+ */
+export function broadcastMovie(movieId: string, patch: MovieUpdate): void {
+  io?.to(ADMIN_ROOM).emit('movie:update', { movieId, ...patch });
 }

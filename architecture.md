@@ -47,7 +47,7 @@ src/
 ├── modules/         # feature slices: auth, units, personnel, admins, movies, seats,
 │                    #   seating, bookings, attendance, audit, reports, settings
 │                    #   each = { *.routes.ts, *.controller.ts, *.service.ts, *.schema.ts }
-├── realtime/        # socket.io gateway (live seat map)
+├── realtime/        # socket.io gateway (live seat map + admin movie feed)
 ├── jobs/            # scheduler: booking-window open, open-pool, seat reclaim, hold expiry
 ├── utils/           # jwt, password, apiError, asyncHandler, ids, transaction (replSet-aware)
 └── types/           # shared TS types, Express request augmentation
@@ -294,9 +294,19 @@ Jobs are idempotent (safe to re-run); a missed tick reconciles on the next run.
   until the end.
 - **Admin `openToAll`** per movie: when set, any rank may book any seat (free-for-all),
   ignoring per-seat rank restrictions.
-- **Real-time:** a **socket.io** gateway (`realtime/gateway.ts`) attached to the HTTP server;
-  clients join room `movie:<id>` and receive `seats:update` events on every hold / release /
-  book / expiry, so all viewers see live availability.
+- **Real-time:** a **socket.io** gateway (`realtime/gateway.ts`) attached to the HTTP server,
+  with two rooms:
+  - `movie:<id>` → `seats:update` on every hold / release / book / expiry, so all viewers of a
+    seat map see live availability.
+  - `admin:movies` → `movie:update` carrying `{ movieId, status?, seatsBooked?, poolSeats?,
+    openToAll? }`. **Joining is restricted to ADMIN/SUPER_ADMIN**, checked against the role on
+    the handshake token (the seat map is fine for any signed-in user; this feed is not). It
+    exists because almost every movie transition is made by a cron job rather than a person —
+    the window opens, the pool releases, the show ends — so without it an admin sees a status
+    frozen at page-load and reasonably concludes the system has stopped. The client patches its
+    cached rows in place rather than invalidating, so one status change doesn't refetch every
+    page of the table and a row can't jump pages under the reader's cursor
+    (`hooks/useLiveMovies.ts`).
 
 ### 3.8 Audit Logging
 `audit(action, metadata)` middleware/helper writes append-only entries for: login, logout,
@@ -311,7 +321,8 @@ user, action, timestamp, IP, metadata.
 ## 4. Frontend Architecture
 Three standard **web apps** (not PWAs). React 19 + Vite + TS + Tailwind + React Router +
 Zustand + TanStack Query + React Hook Form + Zod + Axios + Sonner + Lucide. The user app
-also uses **socket.io-client** (live seat map) and the scanner uses **html5-qrcode**.
+and the admin app use **socket.io-client** (live seat map / live movie list) and the
+scanner uses **html5-qrcode**.
 Feature-based folders; reusable `components/`, `hooks/`. Admin is desktop-first (light+dark);
 user + scanner are mobile-first.
 
@@ -425,4 +436,5 @@ Deploy: PM2 `ecosystem.config.cjs` (cluster mode) for the API; apps served by an
   (per-unit numbers are computed from actual bookings → `unitBookings: [{ unit, booked,
   checkedIn }]`, since the legacy quota table is unused in the seat-based model)
 - `personnel/bulk` (Excel/CSV import) · `seating/movies/:id/open-all` (ADMIN)
-- **WebSocket**: socket.io at `/socket.io`; room `movie:<id>`; event `seats:update`.
+- **WebSocket**: socket.io at `/socket.io`; room `movie:<id>` → `seats:update`;
+  room `admin:movies` (ADMIN only) → `movie:update`.

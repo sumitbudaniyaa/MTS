@@ -2,6 +2,7 @@ import { runInTransaction } from '../utils/transaction.js';
 import { MovieModel, SeatAllocationModel } from '../models/index.js';
 import { MovieStatus } from '../constants/enums.js';
 import { logger } from '../config/logger.js';
+import { broadcastMovie } from '../realtime/gateway.js';
 
 /**
  * Open-pool release. At (or after) a movie's start time, each unit's unused quota
@@ -53,6 +54,10 @@ export async function releaseOpenPool(now: Date = new Date()): Promise<number> {
         movie.poolReleasedAt = now;
         await movie.save({ session: session ?? null });
         released += 1;
+        broadcastMovie(String(_id), {
+          status: MovieStatus.POOL_RELEASED,
+          poolSeats: movie.poolSeats,
+        });
         logger.info({ movieId: String(_id), unused }, '[job] open-pool released');
       });
     } catch (err) {

@@ -99,9 +99,9 @@ export async function deleteMovie(id: string): Promise<void> {
       seatsBooked: movie.seatsBooked,
     });
   }
-  if (bookingHasOpened(movie)) {
-    throw ApiError.conflict('Cannot delete a movie after its booking window has opened');
-  }
+  // Deliberately NOT gated on the booking window. A show nobody booked is worth removing
+  // whenever that becomes clear — including after the window opened, or after it has been and
+  // gone. The ticket count above is the only thing deletion can actually harm.
   const res = await MovieModel.findByIdAndDelete(id);
   if (!res) throw ApiError.notFound('Movie not found');
 }

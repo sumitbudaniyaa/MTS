@@ -13,6 +13,7 @@ import { Modal, ConfirmDialog } from '@/components/ui/Modal';
 import { Table, Th, Td, Pagination } from '@/components/ui/Table';
 import { AllocateSeatsModal } from '@/features/seats/AllocateSeatsModal';
 import { useRole } from '@/lib/role';
+import { useLiveMovies } from '@/hooks/useLiveMovies';
 import { cn } from '@/lib/cn';
 
 const statusTone: Record<MovieStatus, 'neutral' | 'accent' | 'success' | 'warning' | 'danger'> = {
@@ -32,12 +33,6 @@ function fmt(iso: string): string {
 // Booking opens 1h before showtime; movies are locked from edits after that.
 function bookingHasOpened(m: Movie): boolean {
   return Date.now() >= new Date(m.startTime).getTime() - 60 * 60_000;
-}
-
-// Unit allocations freeze at showtime, when the open-pool job hands unused quota to the
-// common pool. Mirrors the server-side guard in seat.service.setAllocations.
-function hasStarted(m: Movie): boolean {
-  return Date.now() >= new Date(m.startTime).getTime();
 }
 
 // A finished show has nothing left to act on: its quota is spent, edit and delete are already
@@ -66,6 +61,9 @@ export function MoviesPage() {
   const [editing, setEditing] = useState<Movie | null>(null);
   const [deleting, setDeleting] = useState<Movie | null>(null);
   const [viewing, setViewing] = useState<Movie | null>(null);
+
+  // Status and seat counts move on their own (cron jobs) — keep the table in step.
+  useLiveMovies();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['movies', page],
@@ -143,60 +141,50 @@ export function MoviesPage() {
                         <Eye className="h-3.5 w-3.5" />
                       </Button>
                     </Tooltip>
-                    {canManageMovies && !isFinished(m) && (
+                    {canManageMovies && (
                       <>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          loading={openAll.isPending && openAll.variables?.id === m.id}
-                          onClick={() => openAll.mutate({ id: m.id, open: !m.openToAll })}
-                          title="Allow any rank to book this movie"
-                        >
-                          {m.openToAll ? 'Restrict ranks' : 'Open to all'}
-                        </Button>
-                        <Tooltip
-                          label={
-                            hasStarted(m)
-                              ? 'Locked — the show has started'
-                              : 'Allocate seats across units'
-                          }
-                        >
+                        {/* Open to all stays available right through the screening — it is how
+                            an admin frees up a half-empty show mid-run — but means nothing once
+                            the show is over. */}
+                        {!isFinished(m) && (
                           <Button
                             size="sm"
-                            variant="ghost"
-                            disabled={hasStarted(m)}
-                            onClick={() => setAllocating(m)}
+                            variant="secondary"
+                            loading={openAll.isPending && openAll.variables?.id === m.id}
+                            onClick={() => openAll.mutate({ id: m.id, open: !m.openToAll })}
+                            title="Allow any rank to book this movie"
                           >
-                            <LayoutGrid className="h-3.5 w-3.5" />
+                            {m.openToAll ? 'Restrict ranks' : 'Open to all'}
                           </Button>
-                        </Tooltip>
-                        <Tooltip
-                          label={bookingHasOpened(m) ? 'Locked — booking has opened' : 'Edit'}
-                        >
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={bookingHasOpened(m)}
-                            onClick={() => setEditing(m)}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                        </Tooltip>
-                        {/* A movie with tickets against it is not deletable at all — the
-                            button is hidden rather than disabled, since no admin action can
-                            unlock it. */}
+                        )}
+                        {/* Allocation and details are frozen the moment booking opens: people
+                            are choosing seats against these numbers from that point on. Hidden
+                            rather than disabled — no admin action brings them back. */}
+                        {!bookingHasOpened(m) && (
+                          <>
+                            <Tooltip label="Allocate seats across units">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setAllocating(m)}
+                              >
+                                <LayoutGrid className="h-3.5 w-3.5" />
+                              </Button>
+                            </Tooltip>
+                            <Tooltip label="Edit">
+                              <Button size="sm" variant="ghost" onClick={() => setEditing(m)}>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            </Tooltip>
+                          </>
+                        )}
+                        {/* Deletable for exactly as long as nobody holds a ticket. The first
+                            booking removes the button for good. */}
                         {m.seatsBooked === 0 && (
-                          <Tooltip
-                            label={
-                              bookingHasOpened(m)
-                                ? 'Locked — booking has opened'
-                                : 'Delete'
-                            }
-                          >
+                          <Tooltip label="Delete">
                             <Button
                               size="sm"
                               variant="ghost"
-                              disabled={bookingHasOpened(m)}
                               onClick={() => setDeleting(m)}
                             >
                               <Trash2 className="h-3.5 w-3.5 text-danger" />

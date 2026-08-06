@@ -375,3 +375,26 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       `CLOSED` and `CANCELLED` there is nothing left to act on — quota is spent, edit and delete
       are already locked by the booking window, and "Open to all" can't change a screening that
       is over — so the row shows the eye alone.
+- [x] **Movie row actions now follow the rule that actually applies to each one**, and all three
+      are hidden rather than disabled, since no admin action reverses any of them:
+      - **Delete** — shown for exactly as long as `seatsBooked === 0`; the first booking removes
+        it for good. The server-side window check was dropped too: a show nobody booked is worth
+        deleting whenever that becomes clear, including after its window opened or after it has
+        been and gone. The ticket count is the only thing deletion can harm.
+      - **Edit + Allocate** — hidden once the booking window opens, not merely greyed out.
+        People are choosing seats against those numbers from that moment.
+      - **Open to all** — stays available right through the screening (it is how an admin frees
+        up a half-empty show mid-run) and disappears once the movie is `COMPLETED`/`CLOSED`/
+        `CANCELLED`.
+- [x] **Live movie updates in the admin console** (`admin:movies` room → `movie:update`).
+      Almost every movie transition is made by a cron job rather than a person — the booking
+      window opens, the pool releases at showtime, the show ends — so the list showed a status
+      frozen at page load, which reads as the system having stopped. Emitted from all three jobs,
+      the "Open to all" toggle, and seat booking (the first booking is what permanently removes
+      the delete button, so the console has to see it). Joining the room requires ADMIN/
+      SUPER_ADMIN, checked against the handshake token's role — the seat map is fine for any
+      signed-in user, this feed is not. The client patches cached rows in place rather than
+      invalidating, so one status change doesn't refetch every page of the table and a row can't
+      jump pages under the reader's cursor. Verified end-to-end against a running server: an
+      admin socket received `movie:update {status: POOL_RELEASED}` from a real scheduler tick,
+      and a USER socket that emitted `admin:join` received nothing.
