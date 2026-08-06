@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { api, apiErrorMessage } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { PasswordField } from '@/components/ui/PasswordField';
+import { Sheet } from '@/components/ui/Sheet';
 import { logout } from '@/features/auth/useAuth';
 import { useAuthStore } from '@/stores/auth.store';
 
@@ -22,6 +23,13 @@ export function ProfilePage() {
   }
   if (!user) return <Navigate to="/" replace />;
 
+  /** Closing always discards whatever was typed, so a reopened dialog starts clean. */
+  const closeChange = () => {
+    setChanging(false);
+    setCurrent('');
+    setNext('');
+  };
+
   const submitPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (next.length < 8) {
@@ -32,9 +40,7 @@ export function ProfilePage() {
     try {
       await api.post('/auth/change-password', { currentPassword: current, newPassword: next });
       toast.success('Password updated');
-      setCurrent('');
-      setNext('');
-      setChanging(false);
+      closeChange();
     } catch (err) {
       toast.error(apiErrorMessage(err, 'Could not change password'));
     } finally {
@@ -62,39 +68,42 @@ export function ProfilePage() {
         </div>
       </div>
 
-      {!changing ? (
-        <div className="space-y-2">
-          <Button variant="secondary" className="w-full" onClick={() => setChanging(true)}>
-            Change password
-          </Button>
-          <Button
-            variant="ghost"
-            className="w-full"
-            onClick={async () => {
-              await logout();
-              navigate('/');
-              toast.success('Signed out');
-            }}
-          >
-            Sign out
-          </Button>
-        </div>
-      ) : (
-        <form onSubmit={submitPassword} className="card space-y-3 p-4">
+      <div className="space-y-2">
+        <Button variant="secondary" className="w-full" onClick={() => setChanging(true)}>
+          Change password
+        </Button>
+        <Button
+          variant="ghost"
+          className="w-full"
+          onClick={async () => {
+            await logout();
+            navigate('/');
+            toast.success('Signed out');
+          }}
+        >
+          Sign out
+        </Button>
+      </div>
+
+      <Sheet open={changing} onClose={closeChange} title="Change password">
+        <form onSubmit={submitPassword} className="space-y-3">
           <PasswordField
             label="Current password"
             id="cur-pass"
+            autoComplete="current-password"
             value={current}
             onChange={(e) => setCurrent(e.target.value)}
           />
           <PasswordField
             label="New password"
             id="new-pass"
+            autoComplete="new-password"
             value={next}
             onChange={(e) => setNext(e.target.value)}
           />
-          <div className="flex gap-2">
-            <Button type="button" variant="secondary" className="flex-1" onClick={() => setChanging(false)}>
+          <p className="text-xs text-muted">Use at least 8 characters.</p>
+          <div className="flex gap-2 pt-1">
+            <Button type="button" variant="secondary" className="flex-1" onClick={closeChange}>
               Cancel
             </Button>
             <Button type="submit" className="flex-1" loading={busy}>
@@ -102,7 +111,7 @@ export function ProfilePage() {
             </Button>
           </div>
         </form>
-      )}
+      </Sheet>
     </div>
   );
 }

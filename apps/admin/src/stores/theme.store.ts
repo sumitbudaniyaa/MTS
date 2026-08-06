@@ -5,7 +5,9 @@ type Theme = 'light' | 'dark';
 function initial(): Theme {
   const saved = localStorage.getItem('admin-theme');
   if (saved === 'light' || saved === 'dark') return saved;
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  // Light by default. The OS preference is deliberately NOT followed — the portal is designed
+  // light-first, and an admin who wants dark can toggle it (the choice then persists).
+  return 'light';
 }
 
 function apply(theme: Theme): void {

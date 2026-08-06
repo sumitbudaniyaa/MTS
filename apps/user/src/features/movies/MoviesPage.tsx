@@ -123,10 +123,11 @@ function MovieDetailsSheet({
   onClose: () => void;
   onBook: (m: AvailableMovie) => void;
 }) {
-  // Keep the sheet mounted only while a movie is selected, so its state resets between opens.
-  if (!movie) return null;
-  const cta = callToAction(movie);
-  const runtime = runtimeLabel(movie.durationMinutes);
+  // Stays mounted across close so the panel can animate back down; the Sheet keeps rendering
+  // the last children it was given, so the content doesn't blank out mid-animation.
+  const cta = movie ? callToAction(movie) : null;
+  const runtime = movie ? runtimeLabel(movie.durationMinutes) : null;
+  if (!movie) return <Sheet open={false} onClose={onClose}>{null}</Sheet>;
 
   return (
     <Sheet open onClose={onClose}>
@@ -158,8 +159,8 @@ function MovieDetailsSheet({
         <p className="mt-4 text-sm leading-relaxed text-muted">{movie.description}</p>
       )}
 
-      <Button className="mt-5 w-full" disabled={cta.disabled} onClick={() => onBook(movie)}>
-        {cta.label}
+      <Button className="mt-5 w-full" disabled={cta!.disabled} onClick={() => onBook(movie)}>
+        {cta!.label}
       </Button>
     </Sheet>
   );

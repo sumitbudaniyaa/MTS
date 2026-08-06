@@ -11,17 +11,17 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean;
 }
 
-// Minimal, modern: compact, lightly rounded, subtle.
+// Soft-SaaS: pill-rounded, hairline-lifted, black primary against white secondaries.
 const variants: Record<Variant, string> = {
-  primary: 'bg-fg text-bg hover:opacity-90',
-  secondary: 'border border-border bg-surface text-fg hover:bg-surface-2',
+  primary: 'bg-fg text-bg shadow-soft hover:bg-fg/90',
+  secondary: 'border border-border bg-surface text-fg shadow-soft hover:bg-surface-2',
   ghost: 'text-muted hover:bg-surface-2 hover:text-fg',
-  danger: 'bg-danger text-white hover:opacity-90',
+  danger: 'bg-danger text-white shadow-soft hover:bg-danger/90',
 };
 
 const sizes: Record<Size, string> = {
-  sm: 'h-7 px-2.5 text-xs gap-1.5',
-  md: 'h-9 px-3.5 text-sm gap-2',
+  sm: 'h-8 px-3 text-xs gap-1.5',
+  md: 'h-10 px-4 text-sm gap-2',
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
@@ -33,7 +33,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       disabled={disabled || loading}
       className={cn(
-        'inline-flex items-center justify-center rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+        'inline-flex items-center justify-center whitespace-nowrap rounded-xl font-medium transition disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none',
         variants[variant],
         sizes[size],
         className,

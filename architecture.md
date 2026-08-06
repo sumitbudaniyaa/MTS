@@ -130,6 +130,12 @@ Personnel **ranks** (OFFICER/JCO/JAWAN) gate seat booking — see §3.10.
   (logout) or an unknown/expired token is rejected outright.
 
 ### 3.5.1 Security hardening
+> **Verified by probe, not just by reading the code:** no `passwordHash` / `tokenHash` /
+> blind-index field appears in any live API response; every admin route 401s without a token;
+> no backend secret is present in any built frontend bundle; the only client-side storage is
+> the theme preference (access tokens stay in memory, refresh tokens in an HttpOnly cookie);
+> and error stack traces are returned **only** when `NODE_ENV !== 'production'`.
+
 - **Field encryption at rest** (`utils/fieldCrypto.ts`): **mobile numbers** (admins/scanners/
   users + spouse mobiles) and **unit names** are stored **AES-256-GCM** encrypted. Each field
   carries a keyed **HMAC blind index** (`mobileHash`/`spouseMobileHash`/`nameHash`, added by the
@@ -252,9 +258,23 @@ Three standard **web apps** (not PWAs). React 19 + Vite + TS + Tailwind + React 
 Zustand + TanStack Query + React Hook Form + Zod + Axios + Sonner + Lucide. The user app
 also uses **socket.io-client** (live seat map) and the scanner uses **html5-qrcode**.
 Feature-based folders; reusable `components/`, `hooks/`. Admin is desktop-first (light+dark);
-user + scanner are mobile-first. Minimalist design, compact rounded controls, password-reveal
-toggles, and **numeric inputs with no spinner arrows that can be fully cleared while typing**
-(`NumberInput`). **No React.StrictMode** in the web apps (its dev double-mount broke
+user + scanner are mobile-first.
+
+### 4.1 Admin design system
+A soft-SaaS look: a light neutral canvas (`--bg`) with white cards floating on it, hairline
+borders, `rounded-2xl` cards / `rounded-xl` controls, and a `shadow-soft` lift rather than a
+visible drop shadow. Every colour is a CSS variable in `index.css`, so **dark mode is a token
+swap** — no component carries a per-theme branch. The theme defaults to **light** and does not
+follow the OS preference; an admin who toggles it has that choice persisted
+(`localStorage.admin-theme`). The shell is a grouped sidebar (workspace mark, section labels,
+account card) plus a breadcrumb topbar. Cards are uniform throughout, dashboard KPI tiles
+included — one card treatment, no per-section decoration.
+
+Shared traits across all three apps: compact rounded controls, password-reveal toggles, and **numeric inputs with no spinner arrows that can be fully cleared while typing**
+(`NumberInput`). The user app's bottom `Sheet` stays mounted for one transition after it
+closes (and keeps rendering its last children) so the panel animates back down instead of
+vanishing; callers pass `open={!!selection}` rather than unmounting it.
+**No React.StrictMode** in the web apps (its dev double-mount broke
 refresh-token rotation and the camera). Access token in memory; silent re-auth via cookie.
 Only one frontend env var: **`VITE_API_URL`** (build-time). It's normalized to **tolerate
 being set with or without the `/api/v1` suffix** (auto-appended if missing). Every mobile-

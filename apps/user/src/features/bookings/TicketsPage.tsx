@@ -93,18 +93,19 @@ export function TicketsPage() {
         })}
       </div>
 
-      {active && <TicketDetail booking={active} onClose={() => setActive(null)} />}
+      <TicketDetail booking={active} onClose={() => setActive(null)} />
     </div>
   );
 }
 
-function TicketDetail({ booking, onClose }: { booking: Booking; onClose: () => void }) {
+function TicketDetail({ booking, onClose }: { booking: Booking | null; onClose: () => void }) {
   const qc = useQueryClient();
-  const movie = movieOf(booking);
-  const canCancel = !booking.cancelledAt && booking.tickets.some((t) => t.status === 'BOOKED');
+  const movie = booking ? movieOf(booking) : null;
+  const canCancel =
+    !!booking && !booking.cancelledAt && booking.tickets.some((t) => t.status === 'BOOKED');
 
   const cancel = useMutation({
-    mutationFn: () => api.post(`/bookings/${booking.id}/cancel`),
+    mutationFn: () => api.post(`/bookings/${booking!.id}/cancel`),
     onSuccess: () => {
       toast.success('Booking cancelled');
       qc.invalidateQueries({ queryKey: ['my-bookings'] });
@@ -114,10 +115,10 @@ function TicketDetail({ booking, onClose }: { booking: Booking; onClose: () => v
   });
 
   return (
-    <Sheet open onClose={onClose} title={movie?.title ?? 'Tickets'}>
+    <Sheet open={!!booking} onClose={onClose} title={movie?.title ?? 'Tickets'}>
       {movie && <p className="mb-4 text-xs text-muted">{fmt(movie.startTime)}</p>}
       <div className="max-h-[55vh] space-y-3 overflow-auto">
-        {booking.tickets.map((t: Ticket) => (
+        {booking?.tickets.map((t: Ticket) => (
           <div key={t.code} className="flex flex-col items-center rounded-lg border border-border p-4">
             <div className="rounded-lg bg-white p-3">
               <QRCodeSVG value={t.code} size={150} level="M" />

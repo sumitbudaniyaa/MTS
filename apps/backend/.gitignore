@@ -5,3 +5,7 @@ dist/
 *.log
 coverage/
 .DS_Store
+
+# One-off account backups taken before a destructive fix. These hold a bcrypt hash and
+# encrypted PII — keep them local, never commit them.
+dead-admin-*.json

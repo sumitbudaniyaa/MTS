@@ -28,7 +28,9 @@ The platform is delivered as **four applications** sharing one secure API:
 | **Scanner App** | Door operators | Scan QR tickets to verify entry |
 
 All three web apps are mobile-friendly; the User and Scanner apps are mobile-first, the Admin
-Portal is desktop-first with light/dark themes.
+Portal is desktop-first with light/dark themes (light by default) and a soft-SaaS visual
+language: a light neutral canvas, white rounded cards with hairline borders, and a grouped
+sidebar with a breadcrumb topbar.
 
 ---
 

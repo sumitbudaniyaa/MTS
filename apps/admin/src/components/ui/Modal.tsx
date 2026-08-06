@@ -29,18 +29,22 @@ export function Modal({
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-hidden />
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} aria-hidden />
       <div
-        className={`card relative z-10 flex max-h-[90vh] w-full ${modalWidths[size]} flex-col p-5 shadow-xl`}
+        className={`card relative z-10 flex max-h-[90vh] w-full ${modalWidths[size]} flex-col p-6 shadow-lift`}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-fg">{title}</h2>
-          <button onClick={onClose} className="text-muted hover:text-fg" aria-label="Close">
-            <X className="h-5 w-5" />
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <h2 className="text-lg font-semibold tracking-tight text-fg">{title}</h2>
+          <button
+            onClick={onClose}
+            className="-mr-1 rounded-lg p-1.5 text-muted transition hover:bg-surface-2 hover:text-fg"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
           </button>
         </div>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">{children}</div>
-        {footer && <div className="mt-6 flex justify-end gap-2">{footer}</div>}
+        {footer && <div className="mt-6 flex justify-end gap-2 border-t border-border pt-5">{footer}</div>}
       </div>
     </div>
   );

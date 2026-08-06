@@ -193,6 +193,12 @@ Self-hosting alternative: run the API under **PM2** (`pm2 start ecosystem.config
 serve the built apps from any static host / nginx; if everything is one origin or same-site,
 `COOKIE_SAMESITE=strict` is fine and `VITE_API_URL=/api/v1`.
 
+> ⚠️ **`FIELD_ENCRYPTION_KEY` must never be rotated once data exists.** Mobiles and unit names
+> are encrypted with it and looked up via a keyed blind index, so changing it silently orphans
+> every existing record: affected accounts can no longer log in (the index can't match) and
+> their mobile renders as raw `enc:v1:…` ciphertext. Treat it like the JWT secrets — set once,
+> back it up, never change it.
+
 > **Operational timings** (`VISIBILITY_LEAD_MINUTES`, `NO_SHOW_GRACE_MINUTES`,
 > `SEAT_HOLD_SECONDS`) are only **seed values used on the very first boot**. After that they
 > live in the database and are edited at **Admin → Settings → Timings**; changing the env vars

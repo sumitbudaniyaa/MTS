@@ -1,6 +1,16 @@
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 
-/** Minimal bottom sheet: dim backdrop + rounded panel sliding up from the bottom. */
+const DURATION_MS = 260;
+
+/**
+ * Bottom sheet: dim backdrop + rounded panel that slides up.
+ *
+ * It stays mounted for one transition after `open` flips to false so the panel can animate
+ * back down instead of vanishing, and keeps rendering the last children it was given while
+ * doing so — a parent that clears its selection on close would otherwise blank the content
+ * mid-animation.
+ */
 export function Sheet({
   open,
   onClose,
@@ -12,21 +22,73 @@ export function Sheet({
   title?: string;
   children: ReactNode;
 }) {
+  const [mounted, setMounted] = useState(open);
+  const [shown, setShown] = useState(false);
+  // Last non-empty children, so the exit animation has something to render.
+  const lastChildren = useRef<ReactNode>(children);
+  if (open) lastChildren.current = children;
+
   useEffect(() => {
-    if (!open) return;
+    if (open) {
+      setMounted(true);
+      // Paint once in the closed position, then transition — otherwise the browser
+      // coalesces both states and there is no animation at all.
+      const raf = requestAnimationFrame(() => setShown(true));
+      return () => cancelAnimationFrame(raf);
+    }
+    setShown(false);
+    const t = setTimeout(() => setMounted(false), DURATION_MS);
+    return () => clearTimeout(t);
+  }, [open]);
+
+  useEffect(() => {
+    if (!mounted) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [mounted, onClose]);
 
-  if (!open) return null;
+  // Don't let the page scroll behind the sheet.
+  useEffect(() => {
+    if (!mounted) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mounted]);
+
+  if (!mounted) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" onClick={onClose} aria-hidden />
-      <div className="relative z-10 w-full max-w-md rounded-t-2xl border-t border-border bg-surface p-5 pb-7">
+      <div
+        className={
+          'absolute inset-0 bg-black/40 backdrop-blur-[1px] transition-opacity duration-[260ms] ease-out ' +
+          (shown ? 'opacity-100' : 'opacity-0')
+        }
+        onClick={onClose}
+        aria-hidden
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        className={
+          'relative z-10 max-h-[88vh] w-full max-w-md overflow-y-auto rounded-t-2xl border-t border-border bg-surface p-5 pb-7 ' +
+          'transition-transform duration-[260ms] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none ' +
+          (shown ? 'translate-y-0' : 'translate-y-full')
+        }
+      >
         <div className="mx-auto mb-4 h-1 w-9 rounded-full bg-border" />
-        {title && <h2 className="mb-4 text-sm font-semibold text-fg">{title}</h2>}
-        {children}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-surface-2 text-muted transition hover:text-fg active:scale-95"
+        >
+          <X className="h-4 w-4" />
+        </button>
+        {title && <h2 className="mb-4 pr-10 text-sm font-semibold text-fg">{title}</h2>}
+        {open ? children : lastChildren.current}
       </div>
     </div>
   );

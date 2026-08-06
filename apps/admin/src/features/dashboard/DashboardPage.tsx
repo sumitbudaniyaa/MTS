@@ -1,13 +1,27 @@
+import type { LucideIcon } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
+import {
+  Building2,
+  Users,
+  ScanLine,
+  Film,
+  Ticket,
+  CheckCircle2,
+  Clock,
+  RotateCcw,
+  XCircle,
+} from 'lucide-react';
 import { api, apiErrorMessage } from '@/lib/api';
 import type { MovieStatus, Overview } from '@/types';
 import { PageHeader, Card, Badge, LoadingState, EmptyState, ErrorState } from '@/components/ui/Misc';
 import { Table, Th, Td } from '@/components/ui/Table';
 
-function Stat({ label, value }: { label: string; value: number }) {
+/** KPI tile: a plain card carrying an icon, the value and its label. */
+function Stat({ label, value, icon: Icon }: { label: string; value: number; icon: LucideIcon }) {
   return (
     <Card className="p-4">
-      <div className="text-2xl font-semibold text-fg">{value}</div>
+      <Icon className="h-4 w-4 text-muted" />
+      <div className="mt-6 text-2xl font-semibold tracking-tight text-fg">{value}</div>
       <div className="mt-0.5 text-xs text-muted">{label}</div>
     </Card>
   );
@@ -47,21 +61,21 @@ export function DashboardPage() {
       {data && (
         <div className="space-y-6">
           {/* Counters */}
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="Units" value={data.units} />
-            <Stat label="Personnel" value={data.personnel} />
-            <Stat label="Scanners" value={data.scanners} />
-            <Stat label="Upcoming movies" value={data.upcomingMovies} />
-            <Stat label="Booked" value={data.tickets.booked} />
-            <Stat label="Checked in" value={data.tickets.checkedIn} />
-            <Stat label="Not checked in" value={data.tickets.expired} />
-            <Stat label="Released" value={data.tickets.released} />
-            <Stat label="Cancelled" value={data.tickets.cancelled} />
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 xl:grid-cols-5">
+            <Stat label="Units" value={data.units} icon={Building2} />
+            <Stat label="Personnel" value={data.personnel} icon={Users} />
+            <Stat label="Scanners" value={data.scanners} icon={ScanLine} />
+            <Stat label="Upcoming movies" value={data.upcomingMovies} icon={Film} />
+            <Stat label="Booked" value={data.tickets.booked} icon={Ticket} />
+            <Stat label="Checked in" value={data.tickets.checkedIn} icon={CheckCircle2} />
+            <Stat label="Not checked in" value={data.tickets.expired} icon={Clock} />
+            <Stat label="Released" value={data.tickets.released} icon={RotateCcw} />
+            <Stat label="Cancelled" value={data.tickets.cancelled} icon={XCircle} />
           </div>
 
           {/* Upcoming movies with bookings */}
           <section>
-            <h2 className="mb-2.5 text-sm font-medium text-fg">Upcoming movies</h2>
+            <h2 className="mb-3 text-sm font-semibold text-fg">Upcoming movies</h2>
             {data.upcoming.length === 0 ? (
               <Card>
                 <EmptyState title="No upcoming movies" />

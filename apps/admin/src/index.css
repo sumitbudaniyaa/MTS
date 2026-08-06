@@ -4,31 +4,33 @@
 @tailwind utilities;
 
 /*
- * Minimalist, premium, enterprise design tokens.
- * Base is black/white; accents are soft blue/green/amber. No gradients, no glassmorphism.
+ * Soft-SaaS design tokens: a light neutral canvas, white cards with hairline borders and a
+ * whisper of shadow, generous rounding, and pale gradient washes reserved for KPI tiles.
+ * Every colour is a CSS variable, so the dark theme is a token swap rather than a second
+ * stylesheet.
  */
 @layer base {
   :root {
-    --bg: 250 250 250;
+    --bg: 246 246 247; /* app canvas — content sits above it on white */
     --surface: 255 255 255;
     --surface-2: 244 244 245;
-    --border: 228 228 231;
+    --border: 233 233 236; /* hairline; deliberately lighter than the text scale */
     --fg: 24 24 27;
     --muted: 113 113 122;
-    --accent: 59 130 246; /* soft blue */
-    --success: 34 197 94; /* soft green */
-    --warning: 245 158 11; /* soft amber */
-    --danger: 239 68 68;
+    --accent: 79 110 247;
+    --success: 22 163 74;
+    --warning: 217 119 6;
+    --danger: 225 65 65;
   }
 
   .dark {
-    --bg: 9 9 11;
+    --bg: 10 10 12;
     --surface: 24 24 27;
-    --surface-2: 39 39 42;
-    --border: 39 39 42;
+    --surface-2: 32 32 36;
+    --border: 42 42 47;
     --fg: 244 244 245;
-    --muted: 161 161 170;
-    --accent: 96 165 250;
+    --muted: 156 156 166;
+    --accent: 129 152 255;
     --success: 74 222 128;
     --warning: 251 191 36;
     --danger: 248 113 113;
@@ -48,15 +50,26 @@
 
 @layer components {
   .card {
-    @apply rounded-lg border border-border bg-surface;
+    @apply rounded-2xl border border-border bg-surface shadow-soft;
   }
   .input {
-    @apply w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg
-      outline-none transition focus:border-accent focus:ring-1 focus:ring-accent
-      placeholder:text-muted disabled:opacity-60;
+    @apply h-10 w-full rounded-xl border border-border bg-surface px-3.5 text-sm text-fg
+      outline-none transition placeholder:text-muted
+      focus:border-accent focus:ring-2 focus:ring-accent/15
+      disabled:cursor-not-allowed disabled:bg-surface-2 disabled:opacity-70;
+  }
+  /* textarea has no fixed height, and select draws its own padding box */
+  textarea.input {
+    @apply h-auto py-2.5;
   }
   .label {
-    @apply mb-1 block text-sm font-medium text-fg;
+    @apply mb-1.5 block text-xs font-medium text-muted;
+  }
+
+  /* Small rounded icon chip used on KPI tiles, the sidebar mark and topbar buttons. */
+  .chip {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border
+      bg-surface text-fg shadow-soft;
   }
 }
 

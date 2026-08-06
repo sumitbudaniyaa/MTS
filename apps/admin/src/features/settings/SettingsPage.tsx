@@ -24,15 +24,16 @@ interface AdminRow {
 export function SettingsPage() {
   const { canManageAdmins } = useRole();
   return (
-    <div className="max-w-3xl">
+    <div>
       <PageHeader
         title="Settings"
         subtitle={canManageAdmins ? 'Your account, timings & administrators' : 'Your account & timings'}
       />
+      {/* Full-width stacked sections. Side-by-side cards read badly here: the account card is
+          two lines and the timings card is tall, so a two-column grid just left a hole. */}
       <div className="space-y-6">
         <MyAccountCard />
         <TimingsCard />
-        {/* Managing admin accounts is a super-admin-only capability. */}
         {canManageAdmins && <AdminsCard />}
       </div>
     </div>

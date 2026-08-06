@@ -233,6 +233,30 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       token, so logging out from an idle tab 401'd — the UI cleared but the refresh family
       survived for 7 days and the app silently re-authenticated on reopen. Logout is now
       authorized by the refresh cookie via `authenticateOptional`.
+- [x] **Admin UI restyled** to the soft-SaaS reference (`uiinspo.png`): new token palette,
+      `rounded-2xl` cards with `shadow-soft`, grouped sidebar with workspace + account cards,
+      breadcrumb topbar. Purely visual — no route, prop or behaviour changes. Verified in a
+      headless browser. Theme now defaults to **light** rather than following the OS.
+- [x] **Admin Settings no longer hugs the left** — was `max-w-3xl`, then briefly a two-column
+      grid (which left a hole beside the short account card); now full-width stacked sections.
+- [x] **User app sheet polish**: smooth slide-up/down transition (respects
+      `prefers-reduced-motion`), a close button, background scroll lock, and Change password
+      now opens in that sheet instead of swapping the page content inline.
+- [x] **Orphaned SUPER_ADMIN removed.** The seeded admin had been written under a *different*
+      `FIELD_ENCRYPTION_KEY`, so its mobile could not be decrypted and its blind index could
+      never match a login attempt — the account was unreachable and rendered as raw
+      `enc:v1:…` ciphertext in the UI. Backed up to a gitignored
+      `apps/backend/dead-admin-<id>.json` (the only way to recover the number if the old key
+      ever resurfaces), then deleted along with its refresh tokens. Audit logs were kept —
+      they are append-only by design. A working SUPER_ADMIN was seeded first and verified.
+      ⚠️ `FIELD_ENCRYPTION_KEY` must never be rotated: doing so permanently orphans every
+      encrypted mobile and unit name already in the database.
+- [x] **Credential-leak sweep** (see `architecture.md` §3.5.1): confirmed no secrets in git
+      history or tracked files, no real secrets in `.env.example`, no backend secret reachable
+      in any built frontend bundle, no `passwordHash`/`tokenHash`/blind index in any live API
+      response, every admin route 401s without a token, no tokens persisted client-side
+      (localStorage holds only the theme), and stack traces are suppressed when
+      `NODE_ENV=production`.
 - [x] **Test-suite flake fixed**: `test/setup.ts` now awaits every model's index build, so
       uniqueness assertions can't race a half-built index.
 - [x] Admin **per-movie Details dialog** (eye icon) — seat layout with who booked each seat

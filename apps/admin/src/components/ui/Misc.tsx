@@ -20,30 +20,31 @@ export function PageHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="mb-6 flex items-start justify-between gap-4">
+    <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 className="text-xl font-semibold text-fg">{title}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
       </div>
-      {action}
+      {action && <div className="flex flex-wrap items-center gap-2">{action}</div>}
     </div>
   );
 }
 
 type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
+// Tinted fill + a matching hairline ring, so pills stay legible on both themes.
 const toneClasses: Record<Tone, string> = {
-  neutral: 'bg-surface-2 text-muted',
-  accent: 'bg-accent/10 text-accent',
-  success: 'bg-success/10 text-success',
-  warning: 'bg-warning/10 text-warning',
-  danger: 'bg-danger/10 text-danger',
+  neutral: 'bg-surface-2 text-muted ring-border',
+  accent: 'bg-accent/10 text-accent ring-accent/20',
+  success: 'bg-success/10 text-success ring-success/20',
+  warning: 'bg-warning/10 text-warning ring-warning/20',
+  danger: 'bg-danger/10 text-danger ring-danger/20',
 };
 
 export function Badge({ children, tone = 'neutral' }: { children: ReactNode; tone?: Tone }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+        'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset',
         toneClasses[tone],
       )}
     >

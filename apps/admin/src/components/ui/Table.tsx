@@ -3,24 +3,29 @@ import { Button } from './Button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 export function Table({ head, children }: { head: ReactNode; children: ReactNode }) {
+  // Wide tables scroll inside the card rather than pushing the page sideways.
   return (
     <div className="card overflow-hidden">
-      <table className="w-full text-sm">
-        <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-wide text-muted">
-          {head}
-        </thead>
-        <tbody className="divide-y divide-border">{children}</tbody>
-      </table>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="border-b border-border bg-surface-2/60 text-left text-xs text-muted">
+            {head}
+          </thead>
+          <tbody className="divide-y divide-border">{children}</tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
 export function Th({ children, className }: { children?: ReactNode; className?: string }) {
-  return <th className={`px-4 py-3 font-medium ${className ?? ''}`}>{children}</th>;
+  return (
+    <th className={`whitespace-nowrap px-5 py-3 font-medium ${className ?? ''}`}>{children}</th>
+  );
 }
 
 export function Td({ children, className }: { children?: ReactNode; className?: string }) {
-  return <td className={`px-4 py-3 text-fg ${className ?? ''}`}>{children}</td>;
+  return <td className={`px-5 py-3.5 text-fg ${className ?? ''}`}>{children}</td>;
 }
 
 export function Pagination({
