@@ -130,6 +130,11 @@ Personnel **ranks** (OFFICER/JCO/JAWAN) gate seat booking — see §3.10.
   (logout) or an unknown/expired token is rejected outright.
 
 ### 3.5.1 Security hardening
+> **Note on the login limiter:** `loginLimiter` allows **10 attempts per 15 minutes keyed by
+> mobile number** (not by IP, so one person can't lock out a shared gateway). Automated scripts
+> that log in repeatedly will hit it and receive a `LOGIN_RATE_LIMITED` 429 whose body has no
+> `accessToken` — that is the limiter working, not a bad credential.
+>
 > **Verified by probe, not just by reading the code:** no `passwordHash` / `tokenHash` /
 > blind-index field appears in any live API response; every admin route 401s without a token;
 > no backend secret is present in any built frontend bundle; the only client-side storage is
@@ -225,6 +230,11 @@ Jobs are idempotent (safe to re-run); a missed tick reconciles on the next run.
   read-only; a manual value is only a fallback when no layout exists yet). `POST
   /seating/movies/:id/generate` still exists for an explicit rebuild before any seat is booked.
 - **Rank gate:** a user may only hold/book a seat if their `rank` ∈ the seat's `allowedRanks`.
+- **Allocation belongs to a movie, not to the nav.** There is no Seat Allocation page or route:
+  saving a new movie opens its allocation dialog immediately, and an "Allocate seats" action on
+  each movie row re-opens it later. Both use `features/seats/AllocateSeatsModal.tsx`, so the
+  "total must equal capacity" rule lives in exactly one place. Allocation is **optional** —
+  skipping leaves every seat in the common pool, which the dialog states explicitly.
 - **Holds & concurrency:** selecting a seat issues a hold (`seatHoldSeconds`) via atomic
   `findOneAndUpdate` (FREE → HELD by user); booking flips own-HELD/FREE → BOOKED, also
   atomic, so two users can never claim the same seat. Booking creates the usual Booking +

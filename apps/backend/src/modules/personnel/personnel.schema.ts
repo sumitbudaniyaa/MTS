@@ -66,6 +66,8 @@ export const personnelListQuerySchema = z.object({
   search: z.string().trim().max(100).optional(),
   unit: z.string().regex(/^[a-f\d]{24}$/i).optional(),
   role: z.enum([Roles.USER, Roles.SCANNER]).optional(),
+  // Rank is a USER-only attribute; filtering by it excludes scanners entirely (see service).
+  rank: z.nativeEnum(Rank).optional(),
   sort: z.string().trim().max(50).optional(),
 });
 export type PersonnelListQuery = z.infer<typeof personnelListQuerySchema>;

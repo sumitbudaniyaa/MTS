@@ -257,6 +257,21 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       response, every admin route 401s without a token, no tokens persisted client-side
       (localStorage holds only the theme), and stack traces are suppressed when
       `NODE_ENV=production`.
+- [x] **Rank filter on unit personnel** — `GET /personnel?rank=` (Zod-validated against the
+      `Rank` enum). Because rank is a USER-only attribute, supplying it excludes scanner
+      accounts from the merge entirely, so the filter can't silently widen the result.
+- [x] **Seat allocation is no longer a nav item.** It belongs to a movie, so it is reached
+      from the movie: creating one opens the allocation dialog immediately, and an
+      "Allocate seats" row action re-opens it afterwards. The `/allocations` route, its nav
+      entry and `AllocationsPage.tsx` were deleted. Allocation stays optional ("Skip for now"
+      on create, "Close" when editing); unallocated seats remain in the common pool. The
+      editor lives in `features/seats/AllocateSeatsModal.tsx` and is the single place the
+      "total must equal capacity" rule is enforced.
+- [x] **Report shows when it will be available** — the 409 already carried the show's end time
+      as `details.availableAt`; the Reports page now renders it as an absolute time plus a
+      relative hint ("in 2 h") instead of a vague "come back later".
+- [x] **Audit-log filter controls aligned** — the actor toggle was ~30px against a 40px
+      select; both are now `h-10` / `rounded-xl`.
 - [x] **Test-suite flake fixed**: `test/setup.ts` now awaits every model's index build, so
       uniqueness assertions can't race a half-built index.
 - [x] Admin **per-movie Details dialog** (eye icon) — seat layout with who booked each seat

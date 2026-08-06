@@ -5,7 +5,6 @@ import {
   Building2,
   Users,
   Film,
-  LayoutGrid,
   Grid3x3,
   BarChart3,
   ScrollText,
@@ -27,11 +26,12 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   end?: boolean;
+  /** Hide from super admins. Currently unused — kept as the hook for operational-only items. */
   adminOnly?: boolean;
 }
 
-// `adminOnly` items are hidden from super admins (movie seat allocation is operational-admin only).
-// Grouping is presentational only — every destination is unchanged.
+// Grouping is presentational only. Seat allocation is deliberately NOT a nav item — it belongs
+// to a movie, so it is reached from the movie (on create, and from the row action afterwards).
 const navGroups: Array<{ label: string | null; items: NavItem[] }> = [
   {
     label: null,
@@ -44,7 +44,6 @@ const navGroups: Array<{ label: string | null; items: NavItem[] }> = [
       { to: '/scanners', label: 'Scanners', icon: Users },
       { to: '/movies', label: 'Movies', icon: Film },
       { to: '/auditorium', label: 'Auditorium', icon: Grid3x3 },
-      { to: '/allocations', label: 'Seat Allocation', icon: LayoutGrid, adminOnly: true },
     ],
   },
   {

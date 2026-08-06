@@ -151,7 +151,10 @@ Base path `/api/v1`. Full surface in [architecture.md](architecture.md#71-api-su
    seats come from the layout). Set the **duration** — booking stays open until the show's
    end time (`startTime + duration`). Movies are shown to users early; **booking opens a
    configurable lead time before** showtime (default 1 h — Admin → Settings → Timings).
-   Optional per-movie **"Open to all ranks"**.
+   Optional per-movie **"Open to all ranks"**. Saving a movie **immediately asks you to split
+   its seats across units** — allocation is part of creating a movie, not a separate page. You
+   can skip it (unallocated seats stay in the common pool) and re-open it later from the
+   **Allocate seats** action on the movie's row.
 3. User app → open the movie → pick seats on the **live map** (open two browsers to see
    seats lock in real time) → **Confirm** → QR tickets show the seat label. Cancelling frees
    the seat live.

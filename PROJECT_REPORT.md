@@ -55,6 +55,8 @@ sidebar with a breadcrumb topbar.
 - Visual auditorium designer (rows/seats, **rank restrictions** per row: Officer / JCO / Jawan).
 - Per-movie seat inventory **auto-generated** from the layout — no manual step.
 - **Live seat map** (real-time) with short **seat holds** while a user completes booking.
+- Creating a movie **prompts for seat allocation inline** (optional); reports unlock once a
+  show ends and state exactly when that will be.
 - **Rank gating** — a user may only book seats their rank is permitted, with an admin override
   (**"Open to all ranks"**) per movie.
 - **Family limit** — a member may hold at most `family size` tickets per show (server-enforced).

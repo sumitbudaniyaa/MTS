@@ -106,11 +106,14 @@ export async function listPersonnel(query: PersonnelListQuery): Promise<Paginate
   const search = query.search ? { mobileHash: blindIndex(query.search) } : {};
 
   const wantUsers = query.role !== Roles.SCANNER;
-  const wantScanners = query.role !== Roles.USER;
+  // Scanner accounts carry no rank, so a rank filter can only ever mean "personnel" —
+  // including them would silently widen the result past what was asked for.
+  const wantScanners = query.role !== Roles.USER && !query.rank;
   const take = query.page * query.limit; // over-fetch per collection, then merge
 
   const userFilter: FilterQuery<UserDoc> = { ...search };
   if (query.unit) userFilter.unit = query.unit;
+  if (query.rank) userFilter.rank = query.rank;
 
   const [users, scanners, userCount, scannerCount] = await Promise.all([
     wantUsers

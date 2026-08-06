@@ -18,6 +18,10 @@ import { Table, Th, Td, Pagination } from '@/components/ui/Table';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useRole } from '@/lib/role';
 
+const RANKS = ['OFFICER', 'JCO', 'JAWAN'] as const;
+/** '' means "all ranks" — the filter is omitted from the request entirely. */
+type RankFilter = '' | (typeof RANKS)[number];
+
 export function UnitDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
@@ -25,6 +29,7 @@ export function UnitDetailsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const debounced = useDebounce(search);
+  const [rank, setRank] = useState<RankFilter>('');
   const [creating, setCreating] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [editing, setEditing] = useState<Personnel | null>(null);
@@ -36,11 +41,17 @@ export function UnitDetailsPage() {
   });
 
   const { data: personnel, isLoading: personnelLoading, isError, error } = useQuery({
-    queryKey: ['personnel', 'unit', id, page, debounced],
+    queryKey: ['personnel', 'unit', id, page, debounced, rank],
     queryFn: async () =>
       (
         await api.get<Paginated<Personnel>>('/personnel', {
-          params: { page, search: debounced || undefined, unit: id, role: 'USER' },
+          params: {
+            page,
+            search: debounced || undefined,
+            unit: id,
+            role: 'USER',
+            rank: rank || undefined,
+          },
         })
       ).data,
   });
@@ -83,9 +94,9 @@ export function UnitDetailsPage() {
         }
       />
 
-      <div className="mb-4 max-w-xs">
-        <div className="relative">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative max-w-xs flex-1">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-muted" />
           <input
             className="input pl-9"
             placeholder="Search by mobile…"
@@ -96,12 +107,43 @@ export function UnitDetailsPage() {
             }}
           />
         </div>
+        <select
+          className="input w-auto"
+          aria-label="Filter by rank"
+          value={rank}
+          onChange={(e) => {
+            setRank(e.target.value as RankFilter);
+            setPage(1);
+          }}
+        >
+          <option value="">All ranks</option>
+          {RANKS.map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
+        </select>
+        {rank && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setRank('');
+              setPage(1);
+            }}
+          >
+            Clear
+          </Button>
+        )}
       </div>
 
       {personnelLoading && <LoadingState />}
       {isError && <ErrorState message={apiErrorMessage(error)} />}
       {personnel && personnel.items.length === 0 && (
-        <EmptyState title="No personnel in this unit" />
+        <EmptyState
+          title={rank ? `No ${rank} personnel in this unit` : 'No personnel in this unit'}
+          hint={rank ? 'Try a different rank, or clear the filter.' : undefined}
+        />
       )}
 
       {personnel && personnel.items.length > 0 && (

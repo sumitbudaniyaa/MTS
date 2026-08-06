@@ -47,8 +47,8 @@ export function AuditPage() {
       <PageHeader title="Audit Logs" subtitle="Admin & scanner activity" />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        {/* Actor segmented toggle */}
-        <div className="inline-flex rounded-lg border border-border p-0.5">
+        {/* Actor segmented toggle — sized to match the adjacent select (h-10 / rounded-xl). */}
+        <div className="inline-flex h-10 items-center rounded-xl border border-border bg-surface p-1">
           {ACTORS.map((a) => (
             <button
               key={a.key || 'all'}
@@ -57,7 +57,7 @@ export function AuditPage() {
                 setPage(1);
               }}
               className={
-                'rounded-md px-3 py-1 text-xs font-medium transition-colors ' +
+                'h-8 rounded-lg px-3 text-xs font-medium transition-colors ' +
                 (actor === a.key ? 'bg-fg text-bg' : 'text-muted hover:text-fg')
               }
             >

@@ -9,7 +9,6 @@ import { UnitsPage } from '@/features/units/UnitsPage';
 import { ScannersPage } from '@/features/scanners/ScannersPage';
 import { UnitDetailsPage } from '@/features/units/UnitDetailsPage';
 import { MoviesPage } from '@/features/movies/MoviesPage';
-import { AllocationsPage } from '@/features/seats/AllocationsPage';
 import { ReportsPage } from '@/features/reports/ReportsPage';
 import { AuditPage } from '@/features/audit/AuditPage';
 import { SettingsPage } from '@/features/settings/SettingsPage';
@@ -40,7 +39,6 @@ export function App() {
           <Route path="/scanners" element={<ScannersPage />} />
           <Route path="/movies" element={<MoviesPage />} />
           <Route path="/auditorium" element={<AuditoriumPage />} />
-          <Route path="/allocations" element={<AllocationsPage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/settings" element={<SettingsPage />} />

@@ -36,9 +36,24 @@ interface MovieReport {
   };
 }
 
-/** The API answers 409 while a movie is still running; that is a state, not a failure. */
-function isNotYetAvailable(err: unknown): boolean {
-  return axios.isAxiosError(err) && err.response?.status === 409;
+/**
+ * The API answers 409 while a movie is still running; that is a state, not a failure. It also
+ * sends the show's end time as `details.availableAt`, so the admin gets a definite "come back
+ * at…" rather than being told to guess.
+ */
+function notYetAvailableUntil(err: unknown): Date | null | false {
+  if (!axios.isAxiosError(err) || err.response?.status !== 409) return false;
+  const details = (err.response?.data as { error?: { details?: { availableAt?: string } } })?.error
+    ?.details;
+  const at = details?.availableAt ? new Date(details.availableAt) : null;
+  return at && !Number.isNaN(at.getTime()) ? at : null;
+}
+
+function whenLabel(at: Date): string {
+  const mins = Math.max(0, Math.round((at.getTime() - Date.now()) / 60_000));
+  const rel =
+    mins < 1 ? 'in under a minute' : mins < 60 ? `in ${mins} min` : `in ${Math.round(mins / 60)} h`;
+  return `${at.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} (${rel})`;
 }
 
 export function ReportsPage() {
@@ -67,14 +82,16 @@ export function ReportsPage() {
         {report.isLoading && <LoadingState />}
         {/* A show that hasn't finished isn't an error — the report simply doesn't exist yet. */}
         {report.isError &&
-          (isNotYetAvailable(report.error) ? (
-            <EmptyState
-              title="Report available once the show has ended"
-              hint="Attendance can only be counted after the last chance to check in has passed."
-            />
-          ) : (
-            <ErrorState message={apiErrorMessage(report.error)} />
-          ))}
+          (() => {
+            const at = notYetAvailableUntil(report.error);
+            if (at === false) return <ErrorState message={apiErrorMessage(report.error)} />;
+            return (
+              <EmptyState
+                title={at ? `Report available ${whenLabel(at)}` : 'Report available once the show has ended'}
+                hint="Attendance can only be counted once the show has ended and the last chance to check in has passed."
+              />
+            );
+          })()}
         {report.data && (
           <div className="space-y-5">
             <div className="flex justify-end">

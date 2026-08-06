@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil, Eye } from 'lucide-react';
+import { Plus, Trash2, Pencil, Eye, LayoutGrid } from 'lucide-react';
 import { api, apiErrorMessage } from '@/lib/api';
 import type { Movie, MovieStatus, Paginated } from '@/types';
 import { PageHeader, Badge, LoadingState, EmptyState, ErrorState } from '@/components/ui/Misc';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal, ConfirmDialog } from '@/components/ui/Modal';
 import { Table, Th, Td, Pagination } from '@/components/ui/Table';
+import { AllocateSeatsModal } from '@/features/seats/AllocateSeatsModal';
 import { useRole } from '@/lib/role';
 import { cn } from '@/lib/cn';
 
@@ -43,6 +44,9 @@ export function MoviesPage() {
   const { canManageMovies } = useRole();
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
+  const [allocating, setAllocating] = useState<Movie | null>(null);
+  // Distinguishes "just created" (shows the intro copy + Skip) from editing an existing split.
+  const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Movie | null>(null);
   const [deleting, setDeleting] = useState<Movie | null>(null);
   const [viewing, setViewing] = useState<Movie | null>(null);
@@ -140,6 +144,14 @@ export function MoviesPage() {
                         <Button
                           size="sm"
                           variant="ghost"
+                          onClick={() => setAllocating(m)}
+                          title="Allocate seats across units"
+                        >
+                          <LayoutGrid className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
                           disabled={bookingHasOpened(m)}
                           onClick={() => setEditing(m)}
                           title={bookingHasOpened(m) ? 'Locked — booking has opened' : 'Edit'}
@@ -163,9 +175,26 @@ export function MoviesPage() {
       {creating && (
         <MovieFormModal
           onClose={() => setCreating(false)}
-          onSaved={() => {
+          onSaved={(movie) => {
             setCreating(false);
             qc.invalidateQueries({ queryKey: ['movies'] });
+            // Continue straight into seat allocation rather than making the admin find it
+            // under a separate nav item. Skipping is allowed — see AllocateSeatsModal.
+            setJustCreatedId(movie.id);
+            setAllocating(movie);
+          }}
+        />
+      )}
+
+      {allocating && (
+        <AllocateSeatsModal
+          isNewMovie={allocating.id === justCreatedId}
+          movieId={allocating.id}
+          movieTitle={allocating.title}
+          capacity={allocating.totalSeats}
+          onClose={() => {
+            setAllocating(null);
+            setJustCreatedId(null);
           }}
         />
       )}
@@ -204,7 +233,13 @@ interface MovieForm {
   durationMinutes: number;
 }
 
-function MovieFormModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function MovieFormModal({
+  onClose,
+  onSaved,
+}: {
+  onClose: () => void;
+  onSaved: (movie: Movie) => void;
+}) {
   const {
     register,
     handleSubmit,
@@ -234,17 +269,19 @@ function MovieFormModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
   };
 
   const save = useMutation({
-    mutationFn: (v: MovieForm) =>
-      api.post('/movies', {
-        title: v.title,
-        description: v.description || undefined,
-        poster: poster || undefined,
-        startTime: new Date(v.startTime).toISOString(),
-        durationMinutes: Number(v.durationMinutes) || 180,
-      }),
-    onSuccess: () => {
+    mutationFn: async (v: MovieForm) =>
+      (
+        await api.post<{ movie: Movie }>('/movies', {
+          title: v.title,
+          description: v.description || undefined,
+          poster: poster || undefined,
+          startTime: new Date(v.startTime).toISOString(),
+          durationMinutes: Number(v.durationMinutes) || 180,
+        })
+      ).data.movie,
+    onSuccess: (movie) => {
       toast.success('Movie created');
-      onSaved();
+      onSaved(movie);
     },
     onError: (e) => toast.error(apiErrorMessage(e)),
   });
