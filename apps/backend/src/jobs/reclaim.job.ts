@@ -97,7 +97,12 @@ export async function reclaimUnclaimedSeats(now: Date = new Date()): Promise<num
           movie.poolSeats += reclaimed;
         }
         // Only the post-show sweep retires the movie; until then it stays in the rotation.
-        if (ended) movie.noShowProcessedAt = now;
+        // Retiring also moves it to its terminal status, so a finished show stops presenting
+        // itself as POOL_RELEASED (i.e. still selling seats) for the rest of time.
+        if (ended) {
+          movie.noShowProcessedAt = now;
+          movie.status = MovieStatus.COMPLETED;
+        }
         await movie.save({ session: session ?? null });
 
         reclaimedTotal += reclaimed;

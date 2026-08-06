@@ -102,8 +102,10 @@ describe('seat reclaim (M6)', () => {
     const fresh = await MovieModel.findById(movie._id);
     expect(fresh?.seatsBooked).toBe(1); // 3 - 2 reclaimed
     expect(fresh?.poolSeats).toBe(2); // 2 returned to pool
-    // Show is still running (default 180m duration), so it stays in the rotation.
+    // Show is still running (default 180m duration), so it stays in the rotation and keeps
+    // its bookable status — freed seats are meant to be re-sold mid-screening.
     expect(fresh?.noShowProcessedAt).toBeNull();
+    expect(fresh?.status).toBe(MovieStatus.POOL_RELEASED);
 
     const after = await BookingModel.findOne({ movie: movie._id });
     const statuses = after?.tickets.map((t) => t.status).sort();
@@ -196,8 +198,11 @@ describe('seat reclaim (M6)', () => {
 
     const after = await BookingModel.findOne({ movie: movie._id });
     expect(after?.tickets[0]?.status).toBe(TicketStatus.RELEASED);
-    // Post-show sweep retires the movie so it stops being re-examined every tick.
-    expect((await MovieModel.findById(movie._id))?.noShowProcessedAt).toBeTruthy();
+    // Post-show sweep retires the movie so it stops being re-examined every tick, and moves
+    // it to its terminal status instead of leaving it looking bookable forever.
+    const retired = await MovieModel.findById(movie._id);
+    expect(retired?.noShowProcessedAt).toBeTruthy();
+    expect(retired?.status).toBe(MovieStatus.COMPLETED);
   });
 });
 

@@ -46,6 +46,7 @@ export type MovieStatus =
   | 'SCHEDULED'
   | 'OPEN'
   | 'POOL_RELEASED'
+  | 'COMPLETED'
   | 'CLOSED'
   | 'CANCELLED';
 

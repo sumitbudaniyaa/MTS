@@ -5,7 +5,8 @@ export const MovieStatus = {
   SCHEDULED: 'SCHEDULED',
   OPEN: 'OPEN', // visibility window started; bookable
   POOL_RELEASED: 'POOL_RELEASED', // unused quota moved to common pool (at startTime)
-  CLOSED: 'CLOSED',
+  COMPLETED: 'COMPLETED', // ran to its end time; retired by the post-show sweep
+  CLOSED: 'CLOSED', // ended early by an admin
   CANCELLED: 'CANCELLED',
 } as const;
 export type MovieStatusType = (typeof MovieStatus)[keyof typeof MovieStatus];

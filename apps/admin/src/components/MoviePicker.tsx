@@ -9,6 +9,7 @@ const statusTone: Record<MovieStatus, 'neutral' | 'accent' | 'success' | 'warnin
   SCHEDULED: 'accent',
   OPEN: 'success',
   POOL_RELEASED: 'warning',
+  COMPLETED: 'neutral',
   CLOSED: 'neutral',
   CANCELLED: 'danger',
 };
