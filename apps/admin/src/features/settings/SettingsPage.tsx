@@ -5,6 +5,7 @@ import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { api, apiErrorMessage } from '@/lib/api';
 import { PageHeader, Card, Badge, LoadingState } from '@/components/ui/Misc';
 import { Button } from '@/components/ui/Button';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { Input, Select } from '@/components/ui/Input';
 import { PasswordInput } from '@/components/ui/PasswordInput';
 import { Modal, ConfirmDialog } from '@/components/ui/Modal';
@@ -300,18 +301,21 @@ function AdminsCard() {
               <div className="text-xs text-muted">{a.mobile}</div>
             </div>
             <div className="flex gap-1">
-              <Button size="sm" variant="ghost" title="Edit" onClick={() => setEditing(a)}>
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                title="Delete"
-                disabled={a.id === me?.id}
-                onClick={() => setDeleting(a)}
-              >
-                <Trash2 className="h-3.5 w-3.5 text-danger" />
-              </Button>
+              <Tooltip label="Edit">
+                <Button size="sm" variant="ghost" onClick={() => setEditing(a)}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              </Tooltip>
+              <Tooltip label={a.id === me?.id ? 'You cannot remove your own account' : 'Delete'}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={a.id === me?.id}
+                  onClick={() => setDeleting(a)}
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-danger" />
+                </Button>
+              </Tooltip>
             </div>
           </div>
         ))}

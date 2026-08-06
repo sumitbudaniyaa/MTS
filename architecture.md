@@ -48,7 +48,7 @@ src/
 │                    #   seating, bookings, attendance, audit, reports, settings
 │                    #   each = { *.routes.ts, *.controller.ts, *.service.ts, *.schema.ts }
 ├── realtime/        # socket.io gateway (live seat map)
-├── jobs/            # scheduler: open-pool, seat reclaim, seat-hold expiry
+├── jobs/            # scheduler: booking-window open, open-pool, seat reclaim, hold expiry
 ├── utils/           # jwt, password, apiError, asyncHandler, ids, transaction (replSet-aware)
 └── types/           # shared TS types, Express request augmentation
 ```
@@ -197,8 +197,43 @@ so a change is fleet-wide **within ~30 s**. The `*_MINUTES` / `SEAT_HOLD_SECONDS
 only **seed values** for the very first boot; changing them later has no effect on an existing
 deployment.
 
+### 3.6.2 Movie lifecycle (`MovieStatus`)
+
+```
+DRAFT ──allocations complete──> SCHEDULED ──window opens──> OPEN ──startTime──> POOL_RELEASED
+                                                                                     │
+                                                                                  end time
+                                                                                     ↓
+                                                                                 COMPLETED
+        CLOSED / CANCELLED  ←── admin, from any pre-show state ──┘
+```
+
+| Status | Set by | Meaning |
+|---|---|---|
+| `DRAFT` | schema default on create | Created, not yet allocated. Not listed, not bookable. |
+| `SCHEDULED` | `seat.service.setAllocations` once allocations equal capacity (or set directly by an admin) | Ready, waiting for its booking window. |
+| `OPEN` | `jobs/openBooking.job.ts` at `startTime − visibilityLeadMinutes` | Booking window is live. |
+| `POOL_RELEASED` | `jobs/openPool.job.ts` at `startTime` | Unused unit quota has moved to the common pool; anyone may book what's left. |
+| `COMPLETED` | `jobs/reclaim.job.ts`, post-show sweep | Ran to its end time and has been retired. Terminal. |
+| `CLOSED` / `CANCELLED` | admin, via `PATCH /movies/:id` | Ended early / called off. Terminal. |
+
+Two rules keep this honest:
+
+- **Status is a report, never a gate.** Bookability is decided per request by `isMovieVisible`
+  against the clock; the stored status only says what the clock has already made true. This is
+  why `OPEN` is safe to stamp on a one-minute tick — a movie whose window opens between ticks
+  is bookable immediately regardless of what its status still says.
+- **Guards that must not lag read the clock, not the status.** `setAllocations` refuses edits
+  from `now >= startTime`, not from `status === POOL_RELEASED`: the pool-release job runs on a
+  one-minute tick, and inside that gap a started movie is still `SCHEDULED`/`OPEN`, so a status
+  check would wave the edit through and re-cut quota that has already been given away.
+
 ### 3.7 Scheduled Jobs (node-cron)
 - **Open-pool release:** at `movie.startTime`, move each unit's unbooked quota into `poolSeats`.
+- **Booking-window open** (`jobs/openBooking.job.ts`): flips `SCHEDULED → OPEN` once
+  `startTime − visibilityLeadMinutes` passes, so a show that is actively selling stops being
+  reported as merely scheduled. Display only — see §3.6.2. Runs *after* the pool release on each
+  tick, so an already-started movie is never briefly marked `OPEN`.
 - **Seat reclaim** (`jobs/reclaim.job.ts`): each ticket is judged against **its own** deadline,
   not one deadline for the whole movie, because the two cohorts differ:
   - booked **before** the show → deadline `startTime + noShowGraceMinutes`; missing it is a
@@ -213,7 +248,8 @@ deployment.
   once the movie is over and the report becomes available. Reclaimed `MovieSeat` rows are freed
   (BOOKED → FREE) and **broadcast live**, so walk-ins can immediately re-grab them. A running
   movie is re-examined every tick; `noShowProcessedAt` is stamped only by the final post-show
-  sweep, which retires it.
+  sweep, which also moves the movie to `COMPLETED` so a finished show stops presenting itself
+  as still selling seats.
 - **Seat-hold expiry (every 20s):** `MovieSeat` rows whose hold elapsed (`seatHoldSeconds`,
   default 120) → `FREE`, broadcast live (see §3.10).
 Jobs are idempotent (safe to re-run); a missed tick reconciles on the next run.
@@ -280,6 +316,14 @@ follow the OS preference; an admin who toggles it has that choice persisted
 account card) plus a breadcrumb topbar. Cards are uniform throughout, dashboard KPI tiles
 included — one card treatment, no per-section decoration.
 
+**Icon-only controls always carry a `Tooltip`** (`components/ui/Tooltip.tsx`) — row actions,
+pagination arrows, layout-editor buttons. It portals to `document.body` with fixed positioning
+rather than rendering an absolutely-positioned child, because `Table` wraps its rows in
+`overflow-hidden` + `overflow-x-auto`, which clips an in-flow tooltip; and its listeners sit on
+a wrapper span so the label still appears for a **disabled** button, which fires no pointer
+events of its own. That last part is the point of the pattern: every locked control (edit after
+booking opens, allocate after showtime, delete-your-own-account) explains *why* it is locked.
+
 Shared traits across all three apps: compact rounded controls, password-reveal toggles, and **numeric inputs with no spinner arrows that can be fully cleared while typing**
 (`NumberInput`). The user app's bottom `Sheet` stays mounted for one transition after it
 closes (and keeps rendering its last children) so the panel animates back down instead of
@@ -322,7 +366,9 @@ Notable post-build changes folded in:
   fire two concurrent `/auth/refresh` calls.
 - **Spouse dual-credential login** (shared family account, same password).
 - **Personnel ranks** (Officer/JCO/JAWAN); **unit `code`/`description` removed**.
-- **Movie lifecycle**: edit/delete locked once booking opens (`start − 1h`); single datetime.
+- **Movie lifecycle** (§3.6.2): edit/delete locked once booking opens (`start − 1h`), unit
+  allocations frozen at showtime, and a movie with any booked ticket cannot be deleted at all
+  (the admin hides the button rather than disabling it — no admin action can unlock it).
 - **Booking quantity capped** to remaining family allowance; **password reveal** toggles.
 - **Rank-based seat structure + live seat booking** (§3.10): auditorium designer, per-movie
   seat generation, rank-gated holds, 2-min hold expiry, socket.io live map, seat-picker UI.

@@ -7,6 +7,7 @@ import { api, apiErrorMessage } from '@/lib/api';
 import type { Movie, MovieStatus, Paginated } from '@/types';
 import { PageHeader, Badge, LoadingState, EmptyState, ErrorState } from '@/components/ui/Misc';
 import { Button } from '@/components/ui/Button';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { Input } from '@/components/ui/Input';
 import { Modal, ConfirmDialog } from '@/components/ui/Modal';
 import { Table, Th, Td, Pagination } from '@/components/ui/Table';
@@ -31,6 +32,12 @@ function fmt(iso: string): string {
 // Booking opens 1h before showtime; movies are locked from edits after that.
 function bookingHasOpened(m: Movie): boolean {
   return Date.now() >= new Date(m.startTime).getTime() - 60 * 60_000;
+}
+
+// Unit allocations freeze at showtime, when the open-pool job hands unused quota to the
+// common pool. Mirrors the server-side guard in seat.service.setAllocations.
+function hasStarted(m: Movie): boolean {
+  return Date.now() >= new Date(m.startTime).getTime();
 }
 
 // Convert an ISO timestamp to the value a <input type="datetime-local"> expects.
@@ -123,14 +130,11 @@ export function MoviesPage() {
                 </Td>
                 <Td className="text-right">
                   <div className="flex justify-end gap-1">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setViewing(m)}
-                      title="View layout, booked seats & who booked them"
-                    >
-                      <Eye className="h-3.5 w-3.5" />
-                    </Button>
+                    <Tooltip label="View layout, booked seats & who booked them">
+                      <Button size="sm" variant="ghost" onClick={() => setViewing(m)}>
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
+                    </Tooltip>
                     {canManageMovies && (
                       <>
                         <Button
@@ -142,26 +146,55 @@ export function MoviesPage() {
                         >
                           {m.openToAll ? 'Restrict ranks' : 'Open to all'}
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setAllocating(m)}
-                          title="Allocate seats across units"
+                        <Tooltip
+                          label={
+                            hasStarted(m)
+                              ? 'Locked — the show has started'
+                              : 'Allocate seats across units'
+                          }
                         >
-                          <LayoutGrid className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={bookingHasOpened(m)}
-                          onClick={() => setEditing(m)}
-                          title={bookingHasOpened(m) ? 'Locked — booking has opened' : 'Edit'}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={hasStarted(m)}
+                            onClick={() => setAllocating(m)}
+                          >
+                            <LayoutGrid className="h-3.5 w-3.5" />
+                          </Button>
+                        </Tooltip>
+                        <Tooltip
+                          label={bookingHasOpened(m) ? 'Locked — booking has opened' : 'Edit'}
                         >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setDeleting(m)} title="Delete">
-                          <Trash2 className="h-3.5 w-3.5 text-danger" />
-                        </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={bookingHasOpened(m)}
+                            onClick={() => setEditing(m)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        </Tooltip>
+                        {/* A movie with tickets against it is not deletable at all — the
+                            button is hidden rather than disabled, since no admin action can
+                            unlock it. */}
+                        {m.seatsBooked === 0 && (
+                          <Tooltip
+                            label={
+                              bookingHasOpened(m)
+                                ? 'Locked — booking has opened'
+                                : 'Delete'
+                            }
+                          >
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={bookingHasOpened(m)}
+                              onClick={() => setDeleting(m)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-danger" />
+                            </Button>
+                          </Tooltip>
+                        )}
                       </>
                     )}
                   </div>

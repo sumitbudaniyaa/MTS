@@ -5,6 +5,7 @@ import { Plus, Trash2, Copy, Pencil } from 'lucide-react';
 import { api, apiErrorMessage } from '@/lib/api';
 import { PageHeader, Card, LoadingState, EmptyState } from '@/components/ui/Misc';
 import { Button } from '@/components/ui/Button';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { Input } from '@/components/ui/Input';
 import { NumberInput } from '@/components/ui/NumberInput';
 import { Modal } from '@/components/ui/Modal';
@@ -334,31 +335,33 @@ function EditLayoutDialog({ initial, onClose }: { initial: RowEdit[]; onClose: (
               />
             </div>
             <div className="ml-auto flex gap-1">
-              <Button
-                size="sm"
-                variant="ghost"
-                title="Duplicate"
-                onClick={() =>
-                  setRows((rs) => [
-                    ...rs.slice(0, selected + 1),
-                    { ...sel, label: rowLabel(rs.length) },
-                    ...rs.slice(selected + 1),
-                  ])
-                }
-              >
-                <Copy className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                title="Delete"
-                onClick={() => {
-                  setRows((rs) => rs.filter((_, idx) => idx !== selected));
-                  setSelected(null);
-                }}
-              >
-                <Trash2 className="h-3.5 w-3.5 text-danger" />
-              </Button>
+              <Tooltip label="Duplicate row">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    setRows((rs) => [
+                      ...rs.slice(0, selected + 1),
+                      { ...sel, label: rowLabel(rs.length) },
+                      ...rs.slice(selected + 1),
+                    ])
+                  }
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </Tooltip>
+              <Tooltip label="Delete row">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setRows((rs) => rs.filter((_, idx) => idx !== selected));
+                    setSelected(null);
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-danger" />
+                </Button>
+              </Tooltip>
             </div>
           </div>
         </div>

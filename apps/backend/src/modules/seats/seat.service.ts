@@ -13,7 +13,7 @@ import type { SetAllocationsInput } from './seat.schema.js';
  * Replace all per-unit allocations for a movie in a single transaction.
  *
  * Invariants enforced:
- *  - the movie exists and quota has not yet been released to the pool;
+ *  - the movie exists, has not started, and is not in a terminal state;
  *  - every referenced unit exists;
  *  - sum(allocated) === movie.totalSeats (full auditorium capacity);
  *  - an allocation cannot be reduced below seats already booked against it.
@@ -21,11 +21,24 @@ import type { SetAllocationsInput } from './seat.schema.js';
 export async function setAllocations(
   movieId: string,
   input: SetAllocationsInput,
+  now: Date = new Date(),
 ): Promise<SeatAllocationDoc[]> {
   const movie = await MovieModel.findById(movieId);
   if (!movie) throw ApiError.notFound('Movie not found');
-  if (movie.status === MovieStatus.POOL_RELEASED || movie.status === MovieStatus.CLOSED) {
-    throw ApiError.conflict('Allocations are locked after pool release / close');
+
+  // Quota freezes the moment the show starts: at startTime the open-pool job moves every
+  // unit's unused quota into the common pool, and re-cutting quota afterwards would hand out
+  // seats that have already been given away. This is checked against the clock rather than
+  // the status because the job runs on a one-minute tick — inside that gap a started movie is
+  // still SCHEDULED/OPEN, and a status check would wave the edit through.
+  if (now.getTime() >= movie.startTime.getTime()) {
+    throw ApiError.conflict('Allocations are locked once the show has started', {
+      startTime: movie.startTime,
+    });
+  }
+  // Terminal states an admin can reach before startTime.
+  if (movie.status === MovieStatus.CLOSED || movie.status === MovieStatus.CANCELLED) {
+    throw ApiError.conflict(`Allocations are locked for a ${movie.status.toLowerCase()} movie`);
   }
 
   const total = input.allocations.reduce((sum, a) => sum + a.allocated, 0);

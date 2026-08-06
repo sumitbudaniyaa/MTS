@@ -8,6 +8,7 @@ import { api, apiErrorMessage } from '@/lib/api';
 import type { Paginated, Unit } from '@/types';
 import { PageHeader, Badge, LoadingState, EmptyState, ErrorState, Card } from '@/components/ui/Misc';
 import { Button } from '@/components/ui/Button';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { Input } from '@/components/ui/Input';
 import { Modal, ConfirmDialog } from '@/components/ui/Modal';
 import { Pagination } from '@/components/ui/Table';
@@ -108,28 +109,30 @@ export function UnitsPage() {
                   </div>
                   {canManagePeople && (
                     <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditing(u);
-                        }}
-                        title="Edit"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleting(u);
-                        }}
-                        title="Delete"
-                      >
-                        <Trash2 className="h-4 w-4 text-danger" />
-                      </Button>
+                      <Tooltip label="Edit">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditing(u);
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </Tooltip>
+                      <Tooltip label="Delete">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleting(u);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4 text-danger" />
+                        </Button>
+                      </Tooltip>
                     </div>
                   )}
                 </div>

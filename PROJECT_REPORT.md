@@ -102,6 +102,8 @@ The top account (created at setup). **Manages people and access:**
 Created by a Super Admin. **Runs the shows:**
 - Design/manage the **auditorium layout**.
 - Create / edit / delete **movies**, toggle "Open to all ranks", manage seat allocation.
+  Editing locks once booking opens, unit allocations lock at showtime, and a movie that has
+  sold even one ticket can no longer be deleted.
 - Manage **scanner operators**.
 - Read-only on units and personnel; full access to reports and audit logs.
 
@@ -129,6 +131,18 @@ Reclaim job  →  frees unscanned seats after the grace period (walk-ins can reb
 Scanner      →  scans QR at the door  →  verified / already-used / invalid
 Admin/Super  →  reviews Reports + Audit logs
 ```
+
+A movie moves through that flow on its own, driven by the clock rather than by anyone
+remembering to press a button:
+
+```
+Draft  →  Scheduled  →  Open (booking window)  →  Pool released (showtime)  →  Completed
+```
+
+Each step is handled by a scheduled job, so the status an admin sees always matches what the
+system is actually doing — a show that has finished reads *Completed*, not *still selling*.
+An admin can end a show early (*Closed*) or call it off (*Cancelled*) from any point before it
+starts.
 
 ---
 

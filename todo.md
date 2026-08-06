@@ -292,3 +292,35 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       uniqueness; Mongoose getter decrypts on read, save/insertMany hook seals on write; login,
       spouse login and uniqueness work via `*Hash`; search on those fields is exact-match. New
       `FIELD_ENCRYPTION_KEY` env var. **23/23 tests** (added at-rest encryption + reuse tests).
+- [x] **Movie lifecycle completed end-to-end** (see `architecture.md` §3.6.2). Two statuses were
+      unreachable, so a finished show sat at `POOL_RELEASED` forever and one that had opened for
+      booking still read `SCHEDULED`:
+      - new **`COMPLETED`** status, stamped by the reclaim job's post-show sweep alongside
+        `noShowProcessedAt` — same transaction, same idempotency guard, no extra query;
+      - new **booking-window job** (`jobs/openBooking.job.ts`) flips `SCHEDULED → OPEN` at
+        `startTime − visibilityLeadMinutes`, finally writing the status the enum and every
+        `$in` query already expected. Runs after the pool release each tick so a started movie
+        is never briefly marked `OPEN`.
+      Safe because status is a *report*, not a gate: bookability is decided per request by
+      `isMovieVisible` against the clock, and all four `[SCHEDULED, OPEN, POOL_RELEASED]`
+      queries already carried a time filter, so ended movies had been falling out by time
+      anyway. `movieReport` gates on end time, so reports on finished shows are unaffected.
+- [x] **Allocations freeze at showtime, by the clock rather than the status.** `setAllocations`
+      checked `status === POOL_RELEASED`, but that status is stamped by a job on a one-minute
+      tick — inside that gap a started movie is still `SCHEDULED`/`OPEN`, and the check waved
+      the edit through, re-cutting quota the open-pool job had already handed to the pool. Now
+      gated on `now >= startTime` (with `CLOSED`/`CANCELLED` still caught by status, since an
+      admin can reach those before showtime). The admin mirrors it: the "Allocate seats" action
+      is disabled after showtime with a tooltip saying why.
+- [x] **A movie with booked tickets cannot be deleted.** `deleteMovie` only checked whether the
+      booking window had opened — a proxy for the fact that actually matters. It now refuses
+      outright when `seatsBooked > 0`, and the admin **hides** the delete button in that case
+      rather than disabling it, since no admin action can unlock it. Delete after the window
+      opens (with no bookings) stays disabled-with-tooltip, matching Edit.
+- [x] **Tooltips on every icon-only admin control** (`components/ui/Tooltip.tsx`): movie row
+      actions, unit/personnel/scanner/admin row actions, auditorium row duplicate+delete, and
+      the pagination arrows (which had no label at all). Portals to `document.body` with fixed
+      positioning — `Table` wraps rows in `overflow-hidden` + `overflow-x-auto`, which clips an
+      in-flow tooltip — and listens on a wrapper span so **disabled** buttons still explain
+      themselves, which is the whole point for locked controls. Replaced the native `title`
+      attributes so there is no double tooltip. **33/33 tests green.**

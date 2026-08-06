@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Button } from './Button';
+import { Tooltip } from './Tooltip';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 export function Table({ head, children }: { head: ReactNode; children: ReactNode }) {
@@ -43,20 +44,29 @@ export function Pagination({
     <div className="mt-4 flex items-center justify-between text-sm text-muted">
       <span>{total} total</span>
       <div className="flex items-center gap-2">
-        <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
+        <Tooltip label="Previous page">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={page <= 1}
+            onClick={() => onPage(page - 1)}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+        </Tooltip>
         <span>
           {page} / {totalPages}
         </span>
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={page >= totalPages}
-          onClick={() => onPage(page + 1)}
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
+        <Tooltip label="Next page">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={page >= totalPages}
+            onClick={() => onPage(page + 1)}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </Tooltip>
       </div>
     </div>
   );

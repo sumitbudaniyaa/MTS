@@ -8,7 +8,11 @@ import {
   UserModel,
 } from '../src/models/index.js';
 import { releaseOpenPool } from '../src/jobs/openPool.job.js';
+import { openBookingWindow } from '../src/jobs/openBooking.job.js';
 import { reclaimUnclaimedSeats } from '../src/jobs/reclaim.job.js';
+import { setAllocations } from '../src/modules/seats/seat.service.js';
+import { deleteMovie } from '../src/modules/movies/movie.service.js';
+import { settings } from '../src/config/settings.js';
 import { verifyTicket } from '../src/modules/attendance/attendance.service.js';
 import { generateTicketCode } from '../src/utils/ids.js';
 import { hashPassword } from '../src/utils/password.js';
@@ -249,5 +253,91 @@ describe('ticket verification (M6)', () => {
     await expect(verifyTicket('TKT-UNKNOWN', scanner.id)).rejects.toMatchObject({
       statusCode: 404,
     });
+  });
+});
+
+describe('booking-window open (M6)', () => {
+  it('marks a movie OPEN once its window starts, and leaves the rest alone', async () => {
+    const lead = settings().visibilityLeadMinutes * 60_000;
+
+    // Window has opened (starts inside the lead) but the show has not begun.
+    const opening = await MovieModel.create({
+      title: 'Opening',
+      showDate: new Date(Date.now() + lead / 2),
+      startTime: new Date(Date.now() + lead / 2),
+      totalSeats: 10,
+      status: MovieStatus.SCHEDULED,
+    });
+    // Still well outside the window.
+    const future = await MovieModel.create({
+      title: 'Future',
+      showDate: new Date(Date.now() + lead + 60 * 60_000),
+      startTime: new Date(Date.now() + lead + 60 * 60_000),
+      totalSeats: 10,
+      status: MovieStatus.SCHEDULED,
+    });
+    // Already started — the open-pool job owns this one, not the window job.
+    const started = await MovieModel.create({
+      title: 'Started',
+      showDate: new Date(Date.now() - 60_000),
+      startTime: new Date(Date.now() - 60_000),
+      totalSeats: 10,
+      status: MovieStatus.SCHEDULED,
+    });
+
+    expect(await openBookingWindow(new Date())).toBe(1);
+    expect((await MovieModel.findById(opening._id))?.status).toBe(MovieStatus.OPEN);
+    expect((await MovieModel.findById(future._id))?.status).toBe(MovieStatus.SCHEDULED);
+    expect((await MovieModel.findById(started._id))?.status).toBe(MovieStatus.SCHEDULED);
+
+    // Idempotent — the movie is no longer SCHEDULED, so it is not picked up again.
+    expect(await openBookingWindow(new Date())).toBe(0);
+  });
+});
+
+describe('allocation lock at showtime', () => {
+  it('refuses to re-cut quota once the show has started', async () => {
+    const unit = await UnitModel.create({ name: 'Guards', code: 'GDS' });
+    const startTime = new Date(Date.now() + 60 * 60_000);
+    const movie = await MovieModel.create({
+      title: 'Locked',
+      showDate: startTime,
+      startTime,
+      totalSeats: 10,
+      status: MovieStatus.SCHEDULED,
+    });
+    const allocations = { allocations: [{ unit: unit.id, allocated: 10 }] };
+
+    // Before showtime: allowed.
+    expect(await setAllocations(movie.id, allocations)).toHaveLength(1);
+
+    // One second past showtime: refused — even though the open-pool job has not run yet and
+    // the movie is still SCHEDULED, which is exactly the gap a status check would miss.
+    await expect(
+      setAllocations(movie.id, allocations, new Date(startTime.getTime() + 1000)),
+    ).rejects.toThrow(/locked once the show has started/i);
+    expect((await MovieModel.findById(movie._id))?.status).toBe(MovieStatus.SCHEDULED);
+  });
+});
+
+describe('movie delete guard', () => {
+  it('refuses to delete a movie that has booked tickets', async () => {
+    const startTime = new Date(Date.now() + 48 * 60 * 60_000); // window not open yet
+    const movie = await MovieModel.create({
+      title: 'Sold',
+      showDate: startTime,
+      startTime,
+      totalSeats: 10,
+      seatsBooked: 1,
+      status: MovieStatus.SCHEDULED,
+    });
+
+    await expect(deleteMovie(movie.id)).rejects.toThrow(/booked tickets/i);
+    expect(await MovieModel.findById(movie._id)).not.toBeNull();
+
+    // With no tickets against it, the same movie deletes cleanly.
+    await MovieModel.updateOne({ _id: movie._id }, { $set: { seatsBooked: 0 } });
+    await deleteMovie(movie.id);
+    expect(await MovieModel.findById(movie._id)).toBeNull();
   });
 });

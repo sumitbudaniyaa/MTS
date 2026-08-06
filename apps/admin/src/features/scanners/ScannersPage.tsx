@@ -8,6 +8,7 @@ import { mobileField } from '@/lib/mobile';
 import type { Paginated, Personnel } from '@/types';
 import { PageHeader, LoadingState, EmptyState, ErrorState } from '@/components/ui/Misc';
 import { Button } from '@/components/ui/Button';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { Input } from '@/components/ui/Input';
 import { Modal, ConfirmDialog } from '@/components/ui/Modal';
 import { Table, Th, Td, Pagination } from '@/components/ui/Table';
@@ -88,9 +89,11 @@ export function ScannersPage() {
                 <Td className="font-medium">{p.mobile}</Td>
                 <Td>{p.role}</Td>
                 <Td className="text-right">
-                  <Button size="sm" variant="ghost" onClick={() => setDeleting(p)} title="Remove">
-                    <Trash2 className="h-4 w-4 text-danger" />
-                  </Button>
+                  <Tooltip label="Remove">
+                    <Button size="sm" variant="ghost" onClick={() => setDeleting(p)}>
+                      <Trash2 className="h-4 w-4 text-danger" />
+                    </Button>
+                  </Tooltip>
                 </Td>
               </tr>
             ))}

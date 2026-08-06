@@ -154,7 +154,11 @@ Base path `/api/v1`. Full surface in [architecture.md](architecture.md#71-api-su
    Optional per-movie **"Open to all ranks"**. Saving a movie **immediately asks you to split
    its seats across units** — allocation is part of creating a movie, not a separate page. You
    can skip it (unallocated seats stay in the common pool) and re-open it later from the
-   **Allocate seats** action on the movie's row.
+   **Allocate seats** action on the movie's row — up until showtime, when unused quota moves
+   to the common pool and the split is frozen.
+   A movie's **status advances by itself**: `DRAFT` → `SCHEDULED` (once allocated) → `OPEN`
+   (booking window starts) → `POOL_RELEASED` (showtime) → `COMPLETED` (end time). Editing
+   locks once booking opens, and a movie with any booked ticket can't be deleted at all.
 3. User app → open the movie → pick seats on the **live map** (open two browsers to see
    seats lock in real time) → **Confirm** → QR tickets show the seat label. Cancelling frees
    the seat live.

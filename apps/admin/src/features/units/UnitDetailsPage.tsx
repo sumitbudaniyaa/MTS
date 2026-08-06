@@ -10,6 +10,7 @@ import { mobileField, onlyDigits10 } from '@/lib/mobile';
 import type { Paginated, Personnel, Unit } from '@/types';
 import { PageHeader, Badge, LoadingState, EmptyState, ErrorState } from '@/components/ui/Misc';
 import { Button } from '@/components/ui/Button';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { Input, Select } from '@/components/ui/Input';
 import { PasswordInput } from '@/components/ui/PasswordInput';
 import { NumberInput } from '@/components/ui/NumberInput';
@@ -170,12 +171,16 @@ export function UnitDetailsPage() {
                 <Td className="text-right">
                   {canManagePeople ? (
                     <div className="flex justify-end gap-1">
-                      <Button size="sm" variant="ghost" onClick={() => setEditing(p)} title="Edit">
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setDeleting(p)} title="Remove">
-                        <Trash2 className="h-4 w-4 text-danger" />
-                      </Button>
+                      <Tooltip label="Edit">
+                        <Button size="sm" variant="ghost" onClick={() => setEditing(p)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </Tooltip>
+                      <Tooltip label="Remove">
+                        <Button size="sm" variant="ghost" onClick={() => setDeleting(p)}>
+                          <Trash2 className="h-4 w-4 text-danger" />
+                        </Button>
+                      </Tooltip>
                     </div>
                   ) : (
                     <span className="text-muted">—</span>

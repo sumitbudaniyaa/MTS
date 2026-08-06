@@ -1,5 +1,6 @@
 import cron, { type ScheduledTask } from 'node-cron';
 import { releaseOpenPool } from './openPool.job.js';
+import { openBookingWindow } from './openBooking.job.js';
 import { reclaimUnclaimedSeats } from './reclaim.job.js';
 import { releaseExpiredHolds } from '../modules/seating/seating.service.js';
 import { logger } from '../config/logger.js';
@@ -16,10 +17,13 @@ export async function runDueJobs(now: Date = new Date()): Promise<void> {
   if (running) return;
   running = true;
   try {
+    // Order matters: pool release claims movies at/after startTime, so running it first
+    // keeps the window job from briefly marking an already-started movie OPEN.
     const releasedPools = await releaseOpenPool(now);
+    const opened = await openBookingWindow(now);
     const reclaimed = await reclaimUnclaimedSeats(now);
-    if (releasedPools || reclaimed) {
-      logger.info({ releasedPools, reclaimed }, '[scheduler] tick complete');
+    if (releasedPools || opened || reclaimed) {
+      logger.info({ releasedPools, opened, reclaimed }, '[scheduler] tick complete');
     }
   } finally {
     running = false;

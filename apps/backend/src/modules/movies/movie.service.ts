@@ -91,6 +91,14 @@ export async function updateMovie(id: string, input: UpdateMovieInput): Promise<
 
 export async function deleteMovie(id: string): Promise<void> {
   const movie = await getMovie(id);
+  // A single issued ticket makes the movie undeletable: someone is holding a seat for it, and
+  // dropping the movie would orphan their booking. Checked independently of the window rule
+  // below, which is only a proxy — `seatsBooked` is the fact that actually matters.
+  if (movie.seatsBooked > 0) {
+    throw ApiError.conflict('Cannot delete a movie with booked tickets', {
+      seatsBooked: movie.seatsBooked,
+    });
+  }
   if (bookingHasOpened(movie)) {
     throw ApiError.conflict('Cannot delete a movie after its booking window has opened');
   }
