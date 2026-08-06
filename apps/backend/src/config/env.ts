@@ -41,8 +41,12 @@ const EnvSchema = z.object({
 
   BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
 
+  // Seed values for the runtime-editable operational settings (see config/settings.ts). They
+  // are used the first time the app starts; after that the admin-managed values in the
+  // database win, so changing these later has no effect on an existing deployment.
   NO_SHOW_GRACE_MINUTES: z.coerce.number().int().positive().default(15),
   VISIBILITY_LEAD_MINUTES: z.coerce.number().int().positive().default(60),
+  SEAT_HOLD_SECONDS: z.coerce.number().int().positive().default(120),
 
   SEED_ADMIN_MOBILE: z.string().optional(),
   SEED_ADMIN_PASSWORD: z.string().optional(),

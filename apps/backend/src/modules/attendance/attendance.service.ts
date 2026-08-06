@@ -76,7 +76,9 @@ export async function verifyTicket(
     case TicketStatus.CHECKED_IN:
       throw ApiError.conflict('Ticket already checked in', { checkedInAt: ticket.checkedInAt });
     case TicketStatus.EXPIRED:
-      throw ApiError.conflict('Ticket expired (no-show)');
+      throw ApiError.conflict('Ticket expired — not checked in within the grace period');
+    case TicketStatus.RELEASED:
+      throw ApiError.conflict('Seat was released — not checked in within the grace period');
     case TicketStatus.CANCELLED:
       throw ApiError.conflict('Ticket was cancelled');
     default:

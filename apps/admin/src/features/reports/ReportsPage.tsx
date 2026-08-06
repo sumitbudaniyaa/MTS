@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import axios from 'axios';
 import { useQuery } from '@tanstack/react-query';
 import { api, apiErrorMessage } from '@/lib/api';
 import { Download } from 'lucide-react';
-import { PageHeader, Card, LoadingState, ErrorState } from '@/components/ui/Misc';
+import { PageHeader, Card, LoadingState, ErrorState, EmptyState } from '@/components/ui/Misc';
 import { Button } from '@/components/ui/Button';
 import { Table, Th, Td } from '@/components/ui/Table';
 import { Modal } from '@/components/ui/Modal';
@@ -25,7 +26,19 @@ interface MovieReport {
     status: string;
   };
   unitBookings: UnitBooking[];
-  attendance: { booked: number; checkedIn: number; expired: number; cancelled: number };
+  endTime: string;
+  attendance: {
+    booked: number;
+    checkedIn: number;
+    expired: number;
+    released: number;
+    cancelled: number;
+  };
+}
+
+/** The API answers 409 while a movie is still running; that is a state, not a failure. */
+function isNotYetAvailable(err: unknown): boolean {
+  return axios.isAxiosError(err) && err.response?.status === 409;
 }
 
 export function ReportsPage() {
@@ -52,7 +65,16 @@ export function ReportsPage() {
         title={report.data ? report.data.movie.title : 'Report'}
       >
         {report.isLoading && <LoadingState />}
-        {report.isError && <ErrorState message={apiErrorMessage(report.error)} />}
+        {/* A show that hasn't finished isn't an error — the report simply doesn't exist yet. */}
+        {report.isError &&
+          (isNotYetAvailable(report.error) ? (
+            <EmptyState
+              title="Report available once the show has ended"
+              hint="Attendance can only be counted after the last chance to check in has passed."
+            />
+          ) : (
+            <ErrorState message={apiErrorMessage(report.error)} />
+          ))}
         {report.data && (
           <div className="space-y-5">
             <div className="flex justify-end">
@@ -92,11 +114,15 @@ export function ReportsPage() {
               </Card>
               <Card>
                 <div className="text-2xl font-semibold">{report.data.attendance.expired}</div>
-                <div className="text-xs text-muted">No-shows</div>
+                <div className="text-xs text-muted">Not checked in</div>
               </Card>
               <Card>
                 <div className="text-2xl font-semibold">{report.data.attendance.cancelled}</div>
                 <div className="text-xs text-muted">Cancelled</div>
+              </Card>
+              <Card>
+                <div className="text-2xl font-semibold">{report.data.attendance.released}</div>
+                <div className="text-xs text-muted">Released mid-show</div>
               </Card>
             </div>
           </div>

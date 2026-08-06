@@ -2,6 +2,7 @@ import {
   BookingModel,
   MovieModel,
   ScannerModel,
+  movieEndTime,
   UnitModel,
   UserModel,
 } from '../../models/index.js';
@@ -54,6 +55,7 @@ export async function overview() {
       booked: tickets[TicketStatus.BOOKED] ?? 0,
       checkedIn: tickets[TicketStatus.CHECKED_IN] ?? 0,
       expired: tickets[TicketStatus.EXPIRED] ?? 0,
+      released: tickets[TicketStatus.RELEASED] ?? 0,
       cancelled: tickets[TicketStatus.CANCELLED] ?? 0,
     },
     upcoming: upcomingList.map((m) => ({
@@ -77,10 +79,23 @@ export async function overview() {
   };
 }
 
-/** Per-movie report: capacity, seat economy, per-unit allocation usage, attendance. */
-export async function movieReport(movieId: string) {
+/**
+ * Per-movie report: capacity, seat economy, per-unit allocation usage, attendance.
+ *
+ * Only available once the show has ended. Mid-screening the attendance figures are
+ * meaningless — an un-scanned ticket is indistinguishable from someone who simply hasn't
+ * reached the door yet — and the reclaim job has not finished resolving every ticket.
+ */
+export async function movieReport(movieId: string, now: Date = new Date()) {
   const movie = await MovieModel.findById(movieId);
   if (!movie) throw ApiError.notFound('Movie not found');
+
+  const endsAt = movieEndTime(movie);
+  if (now.getTime() < endsAt.getTime()) {
+    throw ApiError.conflict('Report is available once the show has ended', {
+      availableAt: endsAt,
+    });
+  }
 
   const [ticketsAgg, unitAgg] = await Promise.all([
     BookingModel.aggregate<{ _id: string; count: number }>([
@@ -135,10 +150,15 @@ export async function movieReport(movieId: string) {
       }))
       .filter((u) => u.booked > 0)
       .sort((a, b) => b.booked - a.booked),
+    endTime: endsAt,
     attendance: {
       booked: byStatus[TicketStatus.BOOKED] ?? 0,
       checkedIn: byStatus[TicketStatus.CHECKED_IN] ?? 0,
+      // Reserved in advance and never claimed.
       expired: byStatus[TicketStatus.EXPIRED] ?? 0,
+      // Walk-in seats taken mid-show and handed back — deliberately kept separate from the
+      // figure above, which is the one that reflects a wasted reservation.
+      released: byStatus[TicketStatus.RELEASED] ?? 0,
       cancelled: byStatus[TicketStatus.CANCELLED] ?? 0,
     },
   };

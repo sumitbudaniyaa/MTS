@@ -18,9 +18,8 @@ import { recordAudit } from '../audit/audit.service.js';
 import { broadcastSeats } from '../../realtime/gateway.js';
 import { AuditAction, MovieStatus, SeatStatus, TicketStatus, type RankType } from '../../constants/enums.js';
 import { Roles } from '../../types/index.js';
-import { env } from '../../config/env.js';
+import { settings } from '../../config/settings.js';
 
-const HOLD_MS = 2 * 60_000; // seats held for 2 minutes while booking
 const BOOKABLE = [MovieStatus.SCHEDULED, MovieStatus.OPEN, MovieStatus.POOL_RELEASED];
 
 // ---- Auditorium layout (admin) --------------------------------------------
@@ -252,7 +251,7 @@ export async function getUserRank(userId: string): Promise<RankType | null> {
   return userRank(userId);
 }
 
-/** Hold a set of seats for the user for 2 minutes (atomic FREE -> HELD, with rank gate). */
+/** Hold a set of seats for the user (atomic FREE -> HELD, with rank gate). */
 export async function holdSeats(
   userId: string,
   movieId: string,
@@ -261,7 +260,7 @@ export async function holdSeats(
   const movie = await assertBookableMovie(movieId);
   const openToAll = Boolean(movie.openToAll);
   const rank = await userRank(userId);
-  const expires = new Date(Date.now() + HOLD_MS);
+  const expires = new Date(Date.now() + settings().seatHoldSeconds * 1_000);
   const held: string[] = [];
 
   for (const label of labels) {
@@ -452,7 +451,7 @@ async function rollback(userId: string, movieId: string, labels: string[]): Prom
 
 // ---- Hold expiry job ------------------------------------------------------
 
-/** Reclaim seats whose 2-minute hold has elapsed (FREE again). Returns count reclaimed. */
+/** Reclaim seats whose hold has elapsed (FREE again). Returns count reclaimed. */
 export async function releaseExpiredHolds(now: Date = new Date()): Promise<number> {
   const expired = await MovieSeatModel.find({
     status: SeatStatus.HELD,
@@ -477,5 +476,3 @@ export async function releaseExpiredHolds(now: Date = new Date()): Promise<numbe
   }
   return expired.length;
 }
-
-void env; // (reserved for future hold-duration config)

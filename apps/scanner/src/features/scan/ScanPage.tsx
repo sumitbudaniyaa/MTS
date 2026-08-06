@@ -13,7 +13,8 @@ type Outcome =
 function labelFor(message: string): string {
   const m = message.toLowerCase();
   if (m.includes('already')) return 'Already used';
-  if (m.includes('expired') || m.includes('no-show')) return 'Expired';
+  if (m.includes('released')) return 'Seat released';
+  if (m.includes('expired')) return 'Expired';
   if (m.includes('cancel')) return 'Cancelled';
   if (m.includes('not found')) return 'Invalid';
   return 'Rejected';

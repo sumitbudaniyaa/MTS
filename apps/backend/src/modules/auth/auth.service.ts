@@ -96,15 +96,29 @@ export async function login(
 const REUSE_GRACE_MS = 30_000;
 
 /**
+ * Whether a token's account role is servable to the app that presented it. The admin portal
+ * signs in as `ADMIN` but the account itself may be `ADMIN` or `SUPER_ADMIN`.
+ */
+function belongsToAudience(tokenRole: Role, audience: Role): boolean {
+  if (audience === 'ADMIN') return tokenRole === 'ADMIN' || tokenRole === 'SUPER_ADMIN';
+  return tokenRole === audience;
+}
+
+/**
  * Rotate a refresh token. Resilient to the rotation race (concurrent tabs / a reload firing
  * two refreshes): a token that was already rotated (revoked WITH a successor) is still accepted
  * for a short grace window, minting a fresh token in the same family. Rejected when:
  *  - unknown / expired,
  *  - revoked WITHOUT a successor (i.e. logged out),
  *  - revoked WITH a successor but presented long after rotation → treated as **token reuse**,
- *    which revokes the entire family (a stolen, already-rotated token can't be replayed).
+ *    which revokes the entire family (a stolen, already-rotated token can't be replayed),
+ *  - held by an account outside `audience` — the app that presented the token doesn't own it.
  */
-export async function rotateRefresh(rawToken: string, req?: Request): Promise<AuthTokens> {
+export async function rotateRefresh(
+  rawToken: string,
+  req?: Request,
+  audience?: Role,
+): Promise<AuthTokens> {
   const tokenHash = hashRefreshToken(rawToken);
   const existing = await RefreshTokenModel.findOne({ tokenHash });
 
@@ -124,6 +138,10 @@ export async function rotateRefresh(rawToken: string, req?: Request): Promise<Au
       );
       throw ApiError.unauthorized('Refresh token reuse detected');
     }
+  }
+
+  if (audience && !belongsToAudience(existing.role as Role, audience)) {
+    throw ApiError.unauthorized('Refresh token belongs to another app');
   }
 
   const account = await findAccountById(String(existing.user), existing.role as Role);

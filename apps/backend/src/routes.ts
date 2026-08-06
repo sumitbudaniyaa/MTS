@@ -10,6 +10,7 @@ import { auditRouter } from './modules/audit/audit.routes.js';
 import { reportRouter } from './modules/reports/report.routes.js';
 import { adminRouter } from './modules/admins/admin.routes.js';
 import { seatingRouter } from './modules/seating/seating.routes.js';
+import { settingsRouter } from './modules/settings/settings.routes.js';
 
 /**
  * Central API router. Feature module routers are mounted here as they are built
@@ -32,3 +33,4 @@ apiRouter.use('/audit-logs', auditRouter);
 apiRouter.use('/reports', reportRouter);
 apiRouter.use('/admins', adminRouter);
 apiRouter.use('/seating', seatingRouter);
+apiRouter.use('/settings', settingsRouter);

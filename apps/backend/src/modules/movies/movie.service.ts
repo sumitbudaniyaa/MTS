@@ -9,7 +9,7 @@ import {
 } from '../../models/index.js';
 import { ApiError } from '../../utils/apiError.js';
 import { buildMeta, type Paginated } from '../../utils/pagination.js';
-import { env } from '../../config/env.js';
+import { settings } from '../../config/settings.js';
 import { escapeRegex } from '../../utils/escapeRegex.js';
 import { MovieStatus } from '../../constants/enums.js';
 import type { CreateMovieInput, MovieListQuery, UpdateMovieInput } from './movie.schema.js';
@@ -71,9 +71,9 @@ export async function getMovie(id: string): Promise<MovieDoc> {
   return movie;
 }
 
-/** Booking opens at startTime - VISIBILITY_LEAD; after that a movie is locked for edits. */
+/** Booking opens at startTime - visibilityLead; after that a movie is locked for edits. */
 function bookingHasOpened(movie: MovieDoc, now: Date = new Date()): boolean {
-  const lead = env.VISIBILITY_LEAD_MINUTES * 60_000;
+  const lead = settings().visibilityLeadMinutes * 60_000;
   return now.getTime() >= movie.startTime.getTime() - lead;
 }
 
@@ -100,7 +100,7 @@ export async function deleteMovie(id: string): Promise<void> {
 
 /**
  * USER-facing list: upcoming/ongoing bookable movies. Movies are shown to users early (any
- * scheduled future show), but **booking only opens `VISIBILITY_LEAD` minutes before start**
+ * scheduled future show), but **booking only opens `visibilityLeadMinutes` before start**
  * (see `toPublicMovie.bookingOpen` and the seat-booking gate). Internal fields are never
  * included.
  */
@@ -160,7 +160,12 @@ export function toPublicMovie(movie: MovieDoc) {
     endTime: movieEndTime(movie),
     availableSeats,
     soldOut: availableSeats <= 0,
-    // Booking only opens VISIBILITY_LEAD minutes before showtime, and closes at the end time.
+    // Booking only opens visibilityLeadMinutes before showtime, and closes at the end time.
+    // The opening moment is sent explicitly — the lead is admin-configurable, so a client
+    // that derived it from a hardcoded constant would show the wrong time.
+    bookingOpensAt: new Date(
+      movie.startTime.getTime() - settings().visibilityLeadMinutes * 60_000,
+    ),
     bookingOpen: isMovieVisible(movie),
   };
 }

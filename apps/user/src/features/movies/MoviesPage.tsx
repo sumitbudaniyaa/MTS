@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api, apiErrorMessage } from '@/lib/api';
 import type { AvailableMovie } from '@/types';
 import { LoadingState, EmptyState, ErrorState } from '@/components/ui/Misc';
 import { Button } from '@/components/ui/Button';
+import { Sheet } from '@/components/ui/Sheet';
 import { useAuthStore } from '@/stores/auth.store';
 import { useUiStore } from '@/stores/ui.store';
 
@@ -13,11 +15,30 @@ function dateLabel(iso: string): string {
 function timeLabel(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
+function runtimeLabel(minutes: number | undefined): string | null {
+  if (!minutes) return null;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h > 0 ? `${h}h ${m > 0 ? `${m}m` : ''}`.trim() : `${m}m`;
+}
+
+/** What the primary action says, and whether it can be pressed. */
+function callToAction(m: AvailableMovie): { label: string; disabled: boolean } {
+  if (m.soldOut) return { label: 'Sold out', disabled: true };
+  if (!m.bookingOpen) {
+    return {
+      label: `Booking opens ${dateLabel(m.bookingOpensAt)}, ${timeLabel(m.bookingOpensAt)}`,
+      disabled: true,
+    };
+  }
+  return { label: 'Book seats', disabled: false };
+}
 
 export function MoviesPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const openLogin = useUiStore((s) => s.openLogin);
+  const [selected, setSelected] = useState<AvailableMovie | null>(null);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['available-movies'],
@@ -37,7 +58,7 @@ export function MoviesPage() {
     <div className="px-4 pt-5">
       <div className="mb-5">
         <h1 className="text-2xl font-bold tracking-tight">Now Showing</h1>
-        <p className="mt-0.5 text-xs text-muted">Pick a movie and choose your seats</p>
+        <p className="mt-0.5 text-xs text-muted">Tap a movie for details and seats</p>
       </div>
 
       {isLoading && <LoadingState />}
@@ -46,55 +67,100 @@ export function MoviesPage() {
         <EmptyState title="No movies available" hint="Check back closer to showtime." />
       )}
 
-      <div className="grid grid-cols-1 gap-4">
-        {data?.map((m) => {
-          const opensAt = new Date(new Date(m.startTime).getTime() - 60 * 60_000);
-          const cta = m.soldOut
-            ? 'Sold out'
-            : !m.bookingOpen
-              ? `Booking opens ${dateLabel(opensAt.toISOString())}, ${timeLabel(opensAt.toISOString())}`
-              : 'Book seats';
-          return (
-            <div key={m.id} className="overflow-hidden rounded-2xl bg-surface shadow-sm ring-1 ring-border">
-              <div className="relative">
-                {m.poster ? (
-                  <img src={m.poster} alt={m.title} className="h-52 w-full object-cover" />
-                ) : (
-                  <div className="flex h-40 w-full items-center justify-center bg-surface-2 text-base font-semibold text-muted">
-                    {m.title}
-                  </div>
-                )}
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-3 pt-10">
-                  <h2 className="text-base font-semibold text-white drop-shadow">{m.title}</h2>
-                  <p className="text-[11px] text-white/80">
-                    {dateLabel(m.startTime)} · {timeLabel(m.startTime)}
-                  </p>
+      <div className="grid grid-cols-2 gap-3">
+        {data?.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            onClick={() => setSelected(m)}
+            className="overflow-hidden rounded-2xl bg-surface text-left shadow-sm ring-1 ring-border transition active:scale-[0.98]"
+          >
+            <div className="relative">
+              {m.poster ? (
+                <img src={m.poster} alt="" className="aspect-[2/3] w-full object-cover" />
+              ) : (
+                <div className="flex aspect-[2/3] w-full items-center justify-center bg-surface-2 p-2 text-center text-sm font-semibold text-muted">
+                  {m.title}
                 </div>
-                <span
-                  className={
-                    'absolute right-2.5 top-2.5 rounded-full px-2 py-0.5 text-[11px] font-medium backdrop-blur ' +
-                    (m.soldOut ? 'bg-black/60 text-white' : 'bg-white/85 text-fg')
-                  }
-                >
-                  {m.soldOut ? 'Sold out' : `${m.availableSeats} left`}
-                </span>
-              </div>
-              {m.description && (
-                <p className="line-clamp-2 px-3.5 pt-3 text-xs text-muted">{m.description}</p>
               )}
-              <div className="p-3.5">
-                <Button
-                  className="w-full"
-                  disabled={m.soldOut || !m.bookingOpen}
-                  onClick={() => handleBook(m)}
-                >
-                  {cta}
-                </Button>
-              </div>
+              <span
+                className={
+                  'absolute right-1.5 top-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium backdrop-blur ' +
+                  (m.soldOut ? 'bg-black/60 text-white' : 'bg-white/85 text-fg')
+                }
+              >
+                {m.soldOut ? 'Sold out' : `${m.availableSeats} left`}
+              </span>
             </div>
-          );
-        })}
+            <div className="p-2.5">
+              <h2 className="truncate text-sm font-semibold text-fg">{m.title}</h2>
+              <p className="mt-0.5 text-[11px] text-muted">
+                {dateLabel(m.startTime)} · {timeLabel(m.startTime)}
+              </p>
+            </div>
+          </button>
+        ))}
       </div>
+
+      <MovieDetailsSheet
+        movie={selected}
+        onClose={() => setSelected(null)}
+        onBook={(m) => {
+          setSelected(null);
+          handleBook(m);
+        }}
+      />
     </div>
+  );
+}
+
+function MovieDetailsSheet({
+  movie,
+  onClose,
+  onBook,
+}: {
+  movie: AvailableMovie | null;
+  onClose: () => void;
+  onBook: (m: AvailableMovie) => void;
+}) {
+  // Keep the sheet mounted only while a movie is selected, so its state resets between opens.
+  if (!movie) return null;
+  const cta = callToAction(movie);
+  const runtime = runtimeLabel(movie.durationMinutes);
+
+  return (
+    <Sheet open onClose={onClose}>
+      <div className="flex gap-3.5">
+        {movie.poster ? (
+          <img
+            src={movie.poster}
+            alt=""
+            className="h-32 w-[5.5rem] shrink-0 rounded-xl object-cover ring-1 ring-border"
+          />
+        ) : (
+          <div className="flex h-32 w-[5.5rem] shrink-0 items-center justify-center rounded-xl bg-surface-2 text-xs text-muted">
+            No poster
+          </div>
+        )}
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold text-fg">{movie.title}</h2>
+          <p className="mt-1 text-xs text-muted">
+            {dateLabel(movie.startTime)} · {timeLabel(movie.startTime)}
+          </p>
+          {runtime && <p className="mt-0.5 text-xs text-muted">Runtime {runtime}</p>}
+          <p className="mt-1.5 text-xs font-medium text-fg">
+            {movie.soldOut ? 'Sold out' : `${movie.availableSeats} seats left`}
+          </p>
+        </div>
+      </div>
+
+      {movie.description && (
+        <p className="mt-4 text-sm leading-relaxed text-muted">{movie.description}</p>
+      )}
+
+      <Button className="mt-5 w-full" disabled={cta.disabled} onClick={() => onBook(movie)}>
+        {cta.label}
+      </Button>
+    </Sheet>
   );
 }

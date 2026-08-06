@@ -22,3 +22,4 @@ export {
   type AuditoriumDoc,
 } from './auditorium.model.js';
 export { MovieSeatModel, type MovieSeat, type MovieSeatDoc } from './movieSeat.model.js';
+export { SettingsModel, SETTINGS_ID, type Settings, type SettingsDoc } from './settings.model.js';

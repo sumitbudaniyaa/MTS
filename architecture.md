@@ -7,7 +7,7 @@
 
 Production-grade internal **Army Auditorium Booking Platform**. Personnel (grouped into
 units) book auditorium movie tickets subject to per-unit seat quotas and per-person family
-limits. Unused quota is released into a common pool at showtime; no-shows are expired and
+limits. Unused quota is released into a common pool at showtime; unclaimed seats are reclaimed and
 their seats released. Tickets carry QR codes verified at the door by a scanner app.
 
 The system is split into **one backend API** and **three frontend applications**.
@@ -41,14 +41,14 @@ Node.js 24 · Express · TypeScript (strict) · MongoDB · Mongoose · Zod · JW
 src/
 ├── server.ts        # process bootstrap: connect DB, start HTTP, graceful shutdown
 ├── app.ts           # Express app: security middleware, routes, error handling
-├── config/          # env (zod-validated), db connection, logger
+├── config/          # env (zod-validated), runtime settings cache, db connection, logger
 ├── middleware/      # auth (authenticate/authorize), validate, error, rateLimit, audit
 ├── models/          # Mongoose schemas (single source of persistence shape)
 ├── modules/         # feature slices: auth, units, personnel, admins, movies, seats,
-│                    #   seating, bookings, attendance, audit, reports
+│                    #   seating, bookings, attendance, audit, reports, settings
 │                    #   each = { *.routes.ts, *.controller.ts, *.service.ts, *.schema.ts }
 ├── realtime/        # socket.io gateway (live seat map)
-├── jobs/            # scheduler: open-pool, no-show, seat-hold expiry
+├── jobs/            # scheduler: open-pool, seat reclaim, seat-hold expiry
 ├── utils/           # jwt, password, apiError, asyncHandler, ids, transaction (replSet-aware)
 └── types/           # shared TS types, Express request augmentation
 ```
@@ -67,6 +67,7 @@ src/
 
 > 🔒 = **AES-256-GCM encrypted at rest** with a keyed HMAC blind index (`*Hash`) for lookup/uniqueness (§3.5.1).
 | `movies`          | Shows | `title`, `description`, `poster` (URL or base64), `showDate`, `startTime`, `durationMinutes` (endTime = start + duration), `totalSeats`, `status`, `openToAll` (rank bypass) |
+| `settings`        | Admin-editable operational timings (singleton, fixed `_id`) | `visibilityLeadMinutes`, `noShowGraceMinutes`, `seatHoldSeconds`, `updatedBy` |
 | `auditoria`       | Physical venue layout (singleton) | `name`, `rows[]` → `{ label, seats[] → { number, allowedRanks[] } }` |
 | `movieseats`      | Per-movie seat inventory | `movie`, `row`, `number`, `label`, `allowedRanks[]`, `status` (FREE\|HELD\|BOOKED), `heldBy`, `holdExpiresAt`, `bookedBy`, `booking`, `ticketCode` |
 | `seatallocations` | Legacy per-unit quota (superseded by seats; endpoints retained) | `movie`, `unit`, `allocated`, `booked`, `released` |
@@ -106,9 +107,18 @@ Personnel **ranks** (OFFICER/JCO/JAWAN) gate seat booking — see §3.10.
 ### 3.5 Auth Flow
 - Login → bcrypt verify → issue short-lived **access JWT** (in-memory on client) + **refresh
   token** set as `HttpOnly` `Secure` `SameSite` cookie.
+- **Each app gets its OWN refresh cookie** — `refresh_token_admin` / `_user` / `_scanner`.
+  Cookies are keyed by (name, domain, path) and **ignore the port**, and in production all
+  three SPAs talk to the same API host, so a single shared name meant one slot: signing into
+  one app overwrote the others' cookie, and reloading then rotated the wrong app's token,
+  returned the wrong role and made the client log itself out. Each app declares its audience on
+  `POST /auth/refresh`, and `rotateRefresh` **rejects a token belonging to another app**.
 - Refresh tokens are **rotated**: each use revokes the old and issues a new one in the same
   `family`. Reuse of a revoked token revokes the entire family (theft detection).
-- Logout revokes the active refresh family.
+- Logout revokes the active refresh family. It is authorized by **possession of the refresh
+  cookie**, not by the access token (`authenticateOptional`) — requiring a live access token
+  meant an idle tab whose 15-minute token had lapsed got a 401, cleared its local state, and
+  left the refresh family alive server-side for its full 7-day lifetime.
 - Refresh tokens are stored **hashed** (never plaintext) in `refreshtokens`.
 - Cookie attributes are env-driven: `COOKIE_SECURE`, `COOKIE_DOMAIN`, and **`COOKIE_SAMESITE`**
   (`strict` for same-site / one origin; **`none` + `Secure=true`** for cross-site hosting such
@@ -158,14 +168,43 @@ detects support via the server `hello` command and **falls back to non-transacti
 execution** on a standalone `mongod` (fine for local dev; the atomic conditional updates
 still prevent oversell). Use a replica set / Atlas in production for full atomicity.
 
+### 3.6.1 Runtime Settings
+
+Three operational timings are editable by an **operational ADMIN** at Admin → Settings →
+Timings, rather than requiring a redeploy: `visibilityLeadMinutes` (when booking opens),
+`noShowGraceMinutes` (check-in grace) and `seatHoldSeconds` (hold while booking). Both admin
+tiers can read them; only ADMIN may write, mirroring the movies/auditorium split. Every change
+is validated against the same bounds in Zod and in the schema, and written to the audit log
+with its before/after values.
+
+They live in a single-document `settings` collection and are served by
+`config/settings.ts` as a **synchronous in-memory cache** — `isMovieVisible`, seat holds and
+the reconciliation jobs read them on hot paths and must not hit Mongo per call. The cache is
+primed at boot, updated in-process on save, and re-read every 30 s. That last part matters
+under PM2 cluster mode: a save handled by one worker reaches the others on their next re-read,
+so a change is fleet-wide **within ~30 s**. The `*_MINUTES` / `SEAT_HOLD_SECONDS` env vars are
+only **seed values** for the very first boot; changing them later has no effect on an existing
+deployment.
+
 ### 3.7 Scheduled Jobs (node-cron)
 - **Open-pool release:** at `movie.startTime`, move each unit's unbooked quota into `poolSeats`.
-- **No-show expiry:** at `startTime + NO_SHOW_GRACE_MINUTES` (15), BOOKED & not-checked-in
-  tickets → `EXPIRED` and their **`MovieSeat` rows are freed (BOOKED → FREE) and broadcast
-  live** — since the movie stays bookable until its end time, walk-ins can immediately re-grab
-  those seats. One-shot per movie (guarded by `noShowProcessedAt`).
-- **Seat-hold expiry (every 20s):** `MovieSeat` rows whose 2-minute hold elapsed → `FREE`,
-  broadcast live (see §3.10).
+- **Seat reclaim** (`jobs/reclaim.job.ts`): each ticket is judged against **its own** deadline,
+  not one deadline for the whole movie, because the two cohorts differ:
+  - booked **before** the show → deadline `startTime + noShowGraceMinutes`; missing it is a
+    genuine no-show → `EXPIRED`;
+  - booked **after** the show started (a walk-in taking a seat this job just freed) → deadline
+    `bookedAt + noShowGraceMinutes`, so they get the same grace measured from their booking
+    rather than being reclaimed on the next tick. Missing it is `RELEASED`, deliberately **not**
+    a no-show — the holder was already in the building, and counting them would corrupt the
+    only figure that means anything.
+
+  Every deadline is **capped at the show's end time**, so no ticket is still awaiting check-in
+  once the movie is over and the report becomes available. Reclaimed `MovieSeat` rows are freed
+  (BOOKED → FREE) and **broadcast live**, so walk-ins can immediately re-grab them. A running
+  movie is re-examined every tick; `noShowProcessedAt` is stamped only by the final post-show
+  sweep, which retires it.
+- **Seat-hold expiry (every 20s):** `MovieSeat` rows whose hold elapsed (`seatHoldSeconds`,
+  default 120) → `FREE`, broadcast live (see §3.10).
 Jobs are idempotent (safe to re-run); a missed tick reconciles on the next run.
 
 ### 3.10 Seat structure, rank gating & real-time (epic)
@@ -180,16 +219,18 @@ Jobs are idempotent (safe to re-run); a missed tick reconciles on the next run.
   read-only; a manual value is only a fallback when no layout exists yet). `POST
   /seating/movies/:id/generate` still exists for an explicit rebuild before any seat is booked.
 - **Rank gate:** a user may only hold/book a seat if their `rank` ∈ the seat's `allowedRanks`.
-- **Holds & concurrency:** selecting a seat issues a **2-minute hold** via atomic
+- **Holds & concurrency:** selecting a seat issues a hold (`seatHoldSeconds`) via atomic
   `findOneAndUpdate` (FREE → HELD by user); booking flips own-HELD/FREE → BOOKED, also
   atomic, so two users can never claim the same seat. Booking creates the usual Booking +
   QR tickets (each carrying `seatLabel`). Idempotent on `(user, idempotencyKey)`.
 - **Cancellation** frees the booked seats (BOOKED → FREE) and broadcasts the change live.
 - **Booking window:** each movie has a `durationMinutes` (admin-set, default 180); its end
   time is `startTime + durationMinutes`. Movies are **shown to users early** (any upcoming
-  show) but seats are only bookable **from `VISIBILITY_LEAD` min before start until the show's
-  end time** (`isMovieVisible` / `bookingOpen` flag). Combined with no-show freeing, seats that
-  open up mid-show remain claimable until the end.
+  show) but seats are only bookable **from `visibilityLeadMinutes` before start until the show's
+  end time** (`isMovieVisible` / `bookingOpen` flag). The public payload also carries
+  `bookingOpensAt`, since the lead is admin-configurable and a client must not derive it from a
+  hardcoded constant. Combined with seat reclaim, seats that open up mid-show remain claimable
+  until the end.
 - **Admin `openToAll`** per movie: when set, any rank may book any seat (free-for-all),
   ignoring per-seat rank restrictions.
 - **Real-time:** a **socket.io** gateway (`realtime/gateway.ts`) attached to the HTTP server;

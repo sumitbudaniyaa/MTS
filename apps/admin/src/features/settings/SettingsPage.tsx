@@ -27,14 +27,145 @@ export function SettingsPage() {
     <div className="max-w-3xl">
       <PageHeader
         title="Settings"
-        subtitle={canManageAdmins ? 'Your account & administrators' : 'Your account'}
+        subtitle={canManageAdmins ? 'Your account, timings & administrators' : 'Your account & timings'}
       />
       <div className="space-y-6">
         <MyAccountCard />
+        <TimingsCard />
         {/* Managing admin accounts is a super-admin-only capability. */}
         {canManageAdmins && <AdminsCard />}
       </div>
     </div>
+  );
+}
+
+interface AppTimings {
+  visibilityLeadMinutes: number;
+  noShowGraceMinutes: number;
+  seatHoldSeconds: number;
+}
+
+const TIMING_FIELDS: Array<{
+  key: keyof AppTimings;
+  label: string;
+  unit: string;
+  min: number;
+  max: number;
+  help: string;
+}> = [
+  {
+    key: 'visibilityLeadMinutes',
+    label: 'Booking opens before showtime',
+    unit: 'minutes',
+    min: 1,
+    max: 20160,
+    help: 'Movies are listed as soon as they are scheduled; seats become bookable this long before the show starts.',
+  },
+  {
+    key: 'noShowGraceMinutes',
+    label: 'Check-in grace period',
+    unit: 'minutes',
+    min: 1,
+    max: 1440,
+    help: 'How long a ticket holder has to check in before their seat is returned. Counted from showtime, or from the booking itself for seats taken after the show has started.',
+  },
+  {
+    key: 'seatHoldSeconds',
+    label: 'Seat hold while booking',
+    unit: 'seconds',
+    min: 15,
+    max: 3600,
+    help: 'How long a seat stays reserved for someone who is still completing their booking.',
+  },
+];
+
+/** Operational timings. Editable by an operational admin; read-only for a super admin. */
+function TimingsCard() {
+  const qc = useQueryClient();
+  const { canManageMovies } = useRole();
+  const [draft, setDraft] = useState<AppTimings | null>(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['settings'],
+    queryFn: async () => (await api.get<{ settings: AppTimings }>('/settings')).data.settings,
+  });
+
+  const save = useMutation({
+    mutationFn: (patch: AppTimings) =>
+      api.patch<{ settings: AppTimings }>('/settings', patch).then((r) => r.data.settings),
+    onSuccess: (updated) => {
+      qc.setQueryData(['settings'], updated);
+      setDraft(null);
+      toast.success('Timings updated');
+    },
+    onError: (e) => toast.error(apiErrorMessage(e)),
+  });
+
+  const current = draft ?? data;
+  const dirty =
+    !!draft && !!data && TIMING_FIELDS.some((f) => draft[f.key] !== data[f.key]);
+  const invalid =
+    !!current &&
+    TIMING_FIELDS.some((f) => {
+      const v = current[f.key];
+      return !Number.isFinite(v) || v < f.min || v > f.max;
+    });
+
+  return (
+    <Card>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-sm font-semibold text-fg">Timings</h2>
+          <p className="mt-1 text-xs text-muted">
+            {canManageMovies
+              ? 'Applies to every movie. Changes take effect within a minute.'
+              : 'Managed by an operational admin.'}
+          </p>
+        </div>
+      </div>
+
+      {isLoading && <LoadingState />}
+      {current && (
+        <div className="mt-4 space-y-4">
+          {TIMING_FIELDS.map((f) => (
+            <div key={f.key}>
+              <div className="flex items-end gap-2">
+                <Input
+                  label={f.label}
+                  type="number"
+                  min={f.min}
+                  max={f.max}
+                  className="max-w-[10rem]"
+                  disabled={!canManageMovies}
+                  value={String(current[f.key])}
+                  onChange={(e) =>
+                    setDraft({ ...current, [f.key]: Number(e.target.value) })
+                  }
+                />
+                <span className="pb-2 text-xs text-muted">{f.unit}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted">{f.help}</p>
+            </div>
+          ))}
+
+          {canManageMovies && (
+            <div className="flex justify-end gap-2 border-t border-border pt-3">
+              <Button variant="secondary" size="sm" disabled={!dirty} onClick={() => setDraft(null)}>
+                Reset
+              </Button>
+              <Button
+                size="sm"
+                loading={save.isPending}
+                disabled={!dirty || invalid}
+                onClick={() => draft && save.mutate(draft)}
+              >
+                Save timings
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 

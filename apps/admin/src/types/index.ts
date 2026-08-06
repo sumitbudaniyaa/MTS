@@ -108,7 +108,7 @@ export interface Overview {
   scanners: number;
   movies: number;
   upcomingMovies: number;
-  tickets: { booked: number; checkedIn: number; expired: number; cancelled: number };
+  tickets: { booked: number; checkedIn: number; expired: number; released: number; cancelled: number };
   upcoming: UpcomingMovie[];
   recentBookings: RecentBooking[];
 }

@@ -41,7 +41,7 @@ Portal is desktop-first with light/dark themes.
 - Enforces **fair, oversell-proof booking** — two people can never get the same seat, even under
   heavy simultaneous load.
 - Issues a **QR ticket per seat**; door operators **scan to verify** (valid / already-used / invalid).
-- Automatically **frees no-show seats** after showtime so walk-ins can be re-seated.
+- Automatically **frees unclaimed seats** after the check-in grace period so walk-ins can be re-seated.
 - Produces **reports** (per-movie, per-unit bookings, attendance) with PDF export.
 - Keeps an **append-only audit trail** of sensitive actions (logins, bookings, verifications).
 
@@ -52,7 +52,7 @@ Portal is desktop-first with light/dark themes.
 ### Booking & Seating
 - Visual auditorium designer (rows/seats, **rank restrictions** per row: Officer / JCO / Jawan).
 - Per-movie seat inventory **auto-generated** from the layout — no manual step.
-- **Live seat map** (real-time) with **2-minute seat holds** while a user completes booking.
+- **Live seat map** (real-time) with short **seat holds** while a user completes booking.
 - **Rank gating** — a user may only book seats their rank is permitted, with an admin override
   (**"Open to all ranks"**) per movie.
 - **Family limit** — a member may hold at most `family size` tickets per show (server-enforced).
@@ -63,7 +63,7 @@ Portal is desktop-first with light/dark themes.
 - **Show duration** → shows stay listed and bookable until the show **ends**.
 - Booking **opens 1 hour before** showtime; shows are visible earlier (with a "booking opens at…"
   indicator).
-- **No-show auto-expiry**: unscanned tickets are released ~15 min after showtime and the seats
+- **Unclaimed-seat reclaim**: unscanned tickets are released after the grace period and the seats
   return to the live map.
 
 ### People & Administration
@@ -112,7 +112,7 @@ Door staff. **Verifies entry:**
 ### 4.4 User (Personnel & Spouse)
 The service member and their family. **Book seats:**
 - Browse upcoming shows (no login required to browse).
-- Sign in → open a show → **pick seats on the live map** (seats lock for 2 minutes) → confirm.
+- Sign in → open a show → **pick seats on the live map** (seats lock briefly) → confirm.
 - Receive **QR tickets** (one per seat) to show at the door; can cancel before showtime.
 
 ### 4.5 End-to-End Flow
@@ -121,7 +121,7 @@ The service member and their family. **Book seats:**
 Super Admin  →  creates Units + Personnel + Admin accounts
 Admin        →  designs Auditorium  →  schedules Movies (seats auto-generated)
 User/Spouse  →  browses  →  books seats on the live map  →  gets QR tickets
-No-show job  →  frees unscanned seats 15 min after start (walk-ins can rebook)
+Reclaim job  →  frees unscanned seats after the grace period (walk-ins can rebook)
 Scanner      →  scans QR at the door  →  verified / already-used / invalid
 Admin/Super  →  reviews Reports + Audit logs
 ```
@@ -131,7 +131,7 @@ Admin/Super  →  reviews Reports + Audit logs
 ## 5. Architecture (Overview)
 
 - **Backend:** Node.js + Express + TypeScript, MongoDB (Mongoose), Socket.IO for the live seat
-  map, scheduled jobs (node-cron) for hold expiry and no-show release.
+  map, scheduled jobs (node-cron) for hold expiry and unclaimed-seat reclaim.
 - **Frontends:** three React (Vite) single-page apps — Admin, User, Scanner.
 - **Data integrity:** bookings use **atomic conditional updates** (and transactions where the
   database supports them) so seats can never be oversold.

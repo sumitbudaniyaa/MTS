@@ -13,7 +13,14 @@ export type MovieStatusType = (typeof MovieStatus)[keyof typeof MovieStatus];
 export const TicketStatus = {
   BOOKED: 'BOOKED',
   CHECKED_IN: 'CHECKED_IN',
+  // Reserved in advance, never checked in — a genuine no-show, and the only status that
+  // counts as one in reports.
   EXPIRED: 'EXPIRED',
+  // Booked AFTER the show started (a walk-in taking a freed seat) and not checked in within
+  // the grace period. The seat is reclaimed exactly as for EXPIRED, but this is deliberately
+  // NOT a no-show: the holder was already in the building, so counting it against attendance
+  // would corrupt the figure that actually means something.
+  RELEASED: 'RELEASED',
   CANCELLED: 'CANCELLED',
 } as const;
 export type TicketStatusType = (typeof TicketStatus)[keyof typeof TicketStatus];
@@ -54,5 +61,6 @@ export const AuditAction = {
   BOOKING_CREATE: 'BOOKING_CREATE',
   BOOKING_CANCEL: 'BOOKING_CANCEL',
   TICKET_VERIFY: 'TICKET_VERIFY',
+  SETTINGS_UPDATE: 'SETTINGS_UPDATE',
 } as const;
 export type AuditActionType = (typeof AuditAction)[keyof typeof AuditAction];

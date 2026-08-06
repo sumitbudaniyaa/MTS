@@ -22,6 +22,24 @@ export const authenticate: RequestHandler = (req, _res, next) => {
 };
 
 /**
+ * Best-effort authentication: populates `req.principal` when a valid token is present and
+ * continues regardless. For endpoints that are authorized by something other than the access
+ * token — logout, which is authorized by possession of the refresh cookie — and which must
+ * still work once the short-lived access token has expired.
+ */
+export const authenticateOptional: RequestHandler = (req, _res, next) => {
+  const header = req.headers.authorization;
+  if (header?.startsWith('Bearer ')) {
+    try {
+      req.principal = verifyAccessToken(header.slice('Bearer '.length).trim());
+    } catch {
+      // An expired or bad token is not an error here — the caller is identified by its cookie.
+    }
+  }
+  next();
+};
+
+/**
  * Authorization: requires the authenticated principal to hold one of the allowed roles.
  * Must run after `authenticate`. Every protected route mounts this with explicit roles.
  */

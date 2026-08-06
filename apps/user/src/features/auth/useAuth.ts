@@ -39,7 +39,7 @@ export async function login(mobile: string, password: string): Promise<AuthUser>
 
 export async function logout(): Promise<void> {
   try {
-    await api.post('/auth/logout');
+    await api.post('/auth/logout', { role: 'USER' });
   } finally {
     useAuthStore.getState().clear();
   }

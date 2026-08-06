@@ -17,6 +17,12 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Which app this is. Sent on /auth/refresh so the API reads THIS app's refresh cookie: the
+// three apps share one cookie jar (cookies ignore port, and in production they share the API
+// host), so a single cookie name would let whichever app logged in last evict the others.
+// 'ADMIN' covers both ADMIN and SUPER_ADMIN accounts.
+const APP_ROLE = 'ADMIN';
+
 // --- Transparent refresh on 401 ---------------------------------------------
 // ONE in-flight refresh is shared by everything — the 401 interceptor AND the app-load
 // bootstrap (see useAuthBootstrap). Deduping across both paths prevents two concurrent
@@ -32,7 +38,7 @@ async function doRefresh(): Promise<RefreshResult | null> {
   try {
     const res = await axios.post<RefreshResult>(
       `${baseURL}/auth/refresh`,
-      {},
+      { role: APP_ROLE },
       { withCredentials: true },
     );
     useAuthStore.getState().setToken(res.data.accessToken);

@@ -18,7 +18,7 @@ the full design and [todo.md](todo.md) for status.
 
 ### Highlights
 - **Rank-based seat structure** — admin designs the auditorium (rows/seats, allowed ranks per
-  row); users pick seats on a **live seat map** (socket.io) with **2-minute holds**.
+  row); users pick seats on a **live seat map** (socket.io) with short **seat holds**.
 - Three separate account collections (`admins` / `scanners` / `users`); spouse logs in with
   their own mobile + the member's password (shared family account).
 - Oversell-proof booking, refresh-token rotation, append-only audit, QR check-in.
@@ -149,15 +149,20 @@ Base path `/api/v1`. Full surface in [architecture.md](architecture.md#71-api-su
 1. Admin → **Auditorium**: design rows/seats + allowed ranks → Save.
 2. Admin → **Movies**: create a movie (seats are auto-generated from the auditorium; total
    seats come from the layout). Set the **duration** — booking stays open until the show's
-   end time (`startTime + duration`). Movies are shown to users early; **booking opens 1 h
-   before** showtime. Optional per-movie **"Open to all ranks"**.
+   end time (`startTime + duration`). Movies are shown to users early; **booking opens a
+   configurable lead time before** showtime (default 1 h — Admin → Settings → Timings).
+   Optional per-movie **"Open to all ranks"**.
 3. User app → open the movie → pick seats on the **live map** (open two browsers to see
    seats lock in real time) → **Confirm** → QR tickets show the seat label. Cancelling frees
    the seat live.
-4. **No-shows auto-free**: `NO_SHOW_GRACE_MINUTES` (15) after showtime, any booked-but-unscanned
-   ticket is expired and its seat is released back onto the live map — so walk-ins can grab it
-   right up until the show ends.
-5. Scanner app → pick the movie → scan the QR → verified / already-used / invalid.
+4. **Unclaimed seats auto-free**: a ticket holder has the **check-in grace period** (default
+   15 min) to scan in, counted from showtime — or from their own booking, for a walk-in who
+   took a seat after the show started. Miss it and the seat is released back onto the live map
+   so someone else can grab it, right up until the show ends. Seats reclaimed from walk-ins are
+   recorded separately and never counted as no-shows.
+5. **Reports** are available **once a show has ended** — mid-screening an unscanned ticket just
+   means someone hasn't reached the door yet.
+6. Scanner app → pick the movie → scan the QR → verified / already-used / invalid.
 
 ## Deployment (free tier: Vercel + Render + Atlas)
 
@@ -187,3 +192,8 @@ index and passwords are bcrypt-hashed, which only the app can produce.
 Self-hosting alternative: run the API under **PM2** (`pm2 start ecosystem.config.cjs`) and
 serve the built apps from any static host / nginx; if everything is one origin or same-site,
 `COOKIE_SAMESITE=strict` is fine and `VITE_API_URL=/api/v1`.
+
+> **Operational timings** (`VISIBILITY_LEAD_MINUTES`, `NO_SHOW_GRACE_MINUTES`,
+> `SEAT_HOLD_SECONDS`) are only **seed values used on the very first boot**. After that they
+> live in the database and are edited at **Admin → Settings → Timings**; changing the env vars
+> on an existing deployment does nothing.

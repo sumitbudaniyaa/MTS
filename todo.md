@@ -206,6 +206,35 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
 - [x] **Logout-on-refresh fixed (all 3 apps):** root cause was `Domain=localhost` on the
       refresh cookie (browsers reject it). Cookie is now **host-only**; env default blanked.
       Hardening: shared deduped `refreshSession()` across bootstrap + 401 interceptor.
+- [x] **Logout-on-refresh, second root cause (user + scanner apps):** all three SPAs shared a
+      single `refresh_token` cookie — cookies are keyed by (name, domain, path) and ignore the
+      port, so signing into one app overwrote the others' cookie; reloading then rotated the
+      wrong app's token, got back the wrong role and the client logged itself out. Each app now
+      owns a cookie (`refresh_token_user` / `_scanner` / `_admin`), declares its audience on
+      `POST /auth/refresh`, and `rotateRefresh` rejects a token belonging to another app.
+- [x] **Per-ticket seat reclaim** (`jobs/reclaim.job.ts`, replaces the one-shot no-show sweep):
+      each ticket has its own deadline — `startTime + grace` for advance bookings (→ `EXPIRED`,
+      a real no-show) and `bookedAt + grace` for walk-ins who took a seat after the show started
+      (→ new `RELEASED` status, deliberately not counted as a no-show). Every deadline is capped
+      at the show's end time. Previously the sweep ran once at `start + 15m` and never again, so
+      a walk-in's unused seat was never reclaimed and permanently inflated attendance.
+- [x] **Reports gated until the show ends** — mid-screening an unscanned ticket only means
+      someone hasn't reached the door yet, so the numbers were misleading.
+- [x] **Admin-editable timings** (`settings` singleton + `config/settings.ts` sync cache):
+      booking lead, check-in grace and seat-hold duration are edited at Admin → Settings →
+      Timings instead of via env + redeploy. Env vars are now first-boot seeds only. Cache is
+      primed at boot, updated on save, and re-read every 30 s so PM2 cluster workers converge.
+- [x] **"No-show" wording removed from every UI** (now "Not checked in" / "Released"); the
+      underlying distinction is kept in the data so reports stay meaningful.
+- [x] **User app movie grid**: 2-column poster cards without description; tapping one opens a
+      bottom sheet with the details and the book action. `bookingOpensAt` is now sent by the API
+      rather than derived from a hardcoded 60 minutes (the lead is configurable).
+- [x] **Logout now actually revokes** (security): `/auth/logout` required an unexpired access
+      token, so logging out from an idle tab 401'd — the UI cleared but the refresh family
+      survived for 7 days and the app silently re-authenticated on reopen. Logout is now
+      authorized by the refresh cookie via `authenticateOptional`.
+- [x] **Test-suite flake fixed**: `test/setup.ts` now awaits every model's index build, so
+      uniqueness assertions can't race a half-built index.
 - [x] Admin **per-movie Details dialog** (eye icon) — seat layout with who booked each seat
       (mobile/rank/unit) + checked-in state + bookings list (`GET /seating/movies/:id/detail`).
 - [x] **Booking throughput/contention benchmark** (`test/loadtest.test.ts`): ~467 bookings/sec

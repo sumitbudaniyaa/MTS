@@ -54,7 +54,8 @@ export function DashboardPage() {
             <Stat label="Upcoming movies" value={data.upcomingMovies} />
             <Stat label="Booked" value={data.tickets.booked} />
             <Stat label="Checked in" value={data.tickets.checkedIn} />
-            <Stat label="No-shows" value={data.tickets.expired} />
+            <Stat label="Not checked in" value={data.tickets.expired} />
+            <Stat label="Released" value={data.tickets.released} />
             <Stat label="Cancelled" value={data.tickets.cancelled} />
           </div>
 

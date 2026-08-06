@@ -16,7 +16,13 @@ export interface MovieReportData {
     availableSeats: number;
   };
   unitBookings: UnitBookingRow[];
-  attendance: { booked: number; checkedIn: number; expired: number; cancelled: number };
+  attendance: {
+    booked: number;
+    checkedIn: number;
+    expired: number;
+    released: number;
+    cancelled: number;
+  };
 }
 function nextY(doc: jsPDF, fallback: number): number {
   const last = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable;
@@ -56,7 +62,8 @@ export function downloadMovieReportPdf(report: MovieReportData): void {
     body: [
       ['Checked in', String(a.checkedIn)],
       ['Booked (awaiting)', String(a.booked)],
-      ['No-shows', String(a.expired)],
+      ['Not checked in', String(a.expired)],
+      ['Released mid-show', String(a.released)],
       ['Cancelled', String(a.cancelled)],
     ],
     theme: 'grid',

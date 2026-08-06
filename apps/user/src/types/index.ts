@@ -16,12 +16,16 @@ export interface AvailableMovie {
   poster: string;
   showDate: string;
   startTime: string;
+  endTime: string;
+  durationMinutes?: number;
   availableSeats: number;
   soldOut: boolean;
+  /** When seats become bookable — sent by the API because the lead time is configurable. */
+  bookingOpensAt: string;
   bookingOpen: boolean;
 }
 
-export type TicketStatus = 'BOOKED' | 'CHECKED_IN' | 'EXPIRED' | 'CANCELLED';
+export type TicketStatus = 'BOOKED' | 'CHECKED_IN' | 'EXPIRED' | 'RELEASED' | 'CANCELLED';
 
 export interface Ticket {
   code: string;

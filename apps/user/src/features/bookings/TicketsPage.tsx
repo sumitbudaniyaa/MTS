@@ -21,7 +21,18 @@ const statusTone = {
   BOOKED: 'accent',
   CHECKED_IN: 'success',
   EXPIRED: 'warning',
+  RELEASED: 'warning',
   CANCELLED: 'danger',
+} as const;
+
+// The stored status is an internal distinction (a wasted reservation vs a seat handed back
+// mid-show); to the ticket holder both simply mean the seat is gone.
+const statusLabel = {
+  BOOKED: 'Booked',
+  CHECKED_IN: 'Checked in',
+  EXPIRED: 'Not checked in',
+  RELEASED: 'Seat released',
+  CANCELLED: 'Cancelled',
 } as const;
 
 export function TicketsPage() {
@@ -114,7 +125,7 @@ function TicketDetail({ booking, onClose }: { booking: Booking; onClose: () => v
             {t.seatLabel && <div className="mt-2 text-sm font-semibold">Seat {t.seatLabel}</div>}
             <div className="mt-1 font-mono text-xs">{t.code}</div>
             <div className="mt-1.5">
-              <Badge tone={statusTone[t.status]}>{t.status.replace('_', ' ')}</Badge>
+              <Badge tone={statusTone[t.status]}>{statusLabel[t.status]}</Badge>
             </div>
           </div>
         ))}

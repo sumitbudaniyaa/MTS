@@ -4,6 +4,7 @@ import { connectDatabase, disconnectDatabase } from './config/db.js';
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
 import { startScheduler, stopScheduler } from './jobs/scheduler.js';
+import { loadSettings, startSettingsRefresh, stopSettingsRefresh } from './config/settings.js';
 import { initRealtime } from './realtime/gateway.js';
 
 /**
@@ -12,6 +13,11 @@ import { initRealtime } from './realtime/gateway.js';
  */
 async function bootstrap(): Promise<void> {
   await connectDatabase();
+
+  // Prime the admin-editable timings before serving traffic, so the first request already
+  // sees the configured values rather than the env seeds.
+  await loadSettings();
+  startSettingsRefresh();
 
   const app = createApp();
   const server: Server = app.listen(env.PORT, () => {
@@ -31,6 +37,7 @@ function setupGracefulShutdown(server: Server): void {
   const shutdown = (signal: string) => {
     logger.info(`[server] ${signal} received, shutting down gracefully`);
     stopScheduler();
+    stopSettingsRefresh();
     server.close(() => {
       void disconnectDatabase().finally(() => {
         logger.info('[server] shutdown complete');

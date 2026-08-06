@@ -1,7 +1,7 @@
 import { applyBaseTransforms } from './_shared.js';
 import { Schema, model, type InferSchemaType, type HydratedDocument } from 'mongoose';
 import { MovieStatus } from '../constants/enums.js';
-import { env } from '../config/env.js';
+import { settings } from '../config/settings.js';
 
 /**
  * A movie show. Seat economy is tracked at two levels:
@@ -62,14 +62,14 @@ export function movieEndTime(
 }
 
 /**
- * True while booking is open: from `startTime - VISIBILITY_LEAD_MINUTES` until the show's end
+ * True while booking is open: from `startTime - visibilityLeadMinutes` until the show's end
  * time. Movies are listed to users earlier than this, but seats are only bookable in-window.
  */
 export function isMovieVisible(
   movie: Pick<Movie, 'startTime' | 'durationMinutes'>,
   now: Date = new Date(),
 ): boolean {
-  const lead = env.VISIBILITY_LEAD_MINUTES * 60_000;
+  const lead = settings().visibilityLeadMinutes * 60_000;
   const t = now.getTime();
   return t >= movie.startTime.getTime() - lead && t < movieEndTime(movie).getTime();
 }
