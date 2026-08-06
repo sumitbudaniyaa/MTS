@@ -327,7 +327,11 @@ booking opens, allocate after showtime, delete-your-own-account) explains *why* 
 Shared traits across all three apps: compact rounded controls, password-reveal toggles, and **numeric inputs with no spinner arrows that can be fully cleared while typing**
 (`NumberInput`). The user app's bottom `Sheet` stays mounted for one transition after it
 closes (and keeps rendering its last children) so the panel animates back down instead of
-vanishing; callers pass `open={!!selection}` rather than unmounting it.
+vanishing; callers pass `open={!!selection}` from **one** `Sheet` element rather than
+unmounting it or returning a different element per branch. Opening waits **two** rAFs before
+flipping the transform — one is not enough, since that callback still runs before the paint of
+the frame the panel mounted in, landing both the open and closed positions in a single paint
+and skipping the animation entirely.
 **No React.StrictMode** in the web apps (its dev double-mount broke
 refresh-token rotation and the camera). Access token in memory; silent re-auth via cookie.
 Only one frontend env var: **`VITE_API_URL`** (build-time). It's normalized to **tolerate

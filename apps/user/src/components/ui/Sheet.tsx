@@ -31,10 +31,19 @@ export function Sheet({
   useEffect(() => {
     if (open) {
       setMounted(true);
-      // Paint once in the closed position, then transition — otherwise the browser
-      // coalesces both states and there is no animation at all.
-      const raf = requestAnimationFrame(() => setShown(true));
-      return () => cancelAnimationFrame(raf);
+      // Paint once in the closed position, then transition — otherwise the browser coalesces
+      // both states and there is no animation at all. This needs *two* frames, not one: the
+      // first rAF still runs before the paint of the frame the panel mounted in, so flipping
+      // `shown` there lands both states in the same paint. The second guarantees the closed
+      // position has actually been rendered before the transform changes.
+      let second = 0;
+      const first = requestAnimationFrame(() => {
+        second = requestAnimationFrame(() => setShown(true));
+      });
+      return () => {
+        cancelAnimationFrame(first);
+        cancelAnimationFrame(second);
+      };
     }
     setShown(false);
     const t = setTimeout(() => setMounted(false), DURATION_MS);

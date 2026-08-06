@@ -123,45 +123,55 @@ function MovieDetailsSheet({
   onClose: () => void;
   onBook: (m: AvailableMovie) => void;
 }) {
-  // Stays mounted across close so the panel can animate back down; the Sheet keeps rendering
-  // the last children it was given, so the content doesn't blank out mid-animation.
+  // One Sheet at one position, driven by a boolean — the same shape every other sheet in the
+  // app uses. Returning a *different* Sheet element from an early return worked, but meant the
+  // panel's mount and its content arrived together; keeping the element stable lets the Sheet
+  // own the open/close transition, and it already re-renders the last children it was given so
+  // the content doesn't blank out on the way down.
   const cta = movie ? callToAction(movie) : null;
   const runtime = movie ? runtimeLabel(movie.durationMinutes) : null;
-  if (!movie) return <Sheet open={false} onClose={onClose}>{null}</Sheet>;
 
   return (
-    <Sheet open onClose={onClose}>
-      <div className="flex gap-3.5">
-        {movie.poster ? (
-          <img
-            src={movie.poster}
-            alt=""
-            className="h-32 w-[5.5rem] shrink-0 rounded-xl object-cover ring-1 ring-border"
-          />
-        ) : (
-          <div className="flex h-32 w-[5.5rem] shrink-0 items-center justify-center rounded-xl bg-surface-2 text-xs text-muted">
-            No poster
+    <Sheet open={!!movie} onClose={onClose}>
+      {movie && cta && (
+        <>
+          <div className="flex gap-3.5">
+            {movie.poster ? (
+              <img
+                src={movie.poster}
+                alt=""
+                // Posters are base64 data URLs and can be megabytes; decoding one on the
+                // main thread stalls the frame the slide-up needs, so the panel appears
+                // already open. `async` hands the decode off and lets the panel animate.
+                decoding="async"
+                className="h-32 w-[5.5rem] shrink-0 rounded-xl bg-surface-2 object-cover ring-1 ring-border"
+              />
+            ) : (
+              <div className="flex h-32 w-[5.5rem] shrink-0 items-center justify-center rounded-xl bg-surface-2 text-xs text-muted">
+                No poster
+              </div>
+            )}
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-fg">{movie.title}</h2>
+              <p className="mt-1 text-xs text-muted">
+                {dateLabel(movie.startTime)} · {timeLabel(movie.startTime)}
+              </p>
+              {runtime && <p className="mt-0.5 text-xs text-muted">Runtime {runtime}</p>}
+              <p className="mt-1.5 text-xs font-medium text-fg">
+                {movie.soldOut ? 'Sold out' : `${movie.availableSeats} seats left`}
+              </p>
+            </div>
           </div>
-        )}
-        <div className="min-w-0">
-          <h2 className="text-base font-semibold text-fg">{movie.title}</h2>
-          <p className="mt-1 text-xs text-muted">
-            {dateLabel(movie.startTime)} · {timeLabel(movie.startTime)}
-          </p>
-          {runtime && <p className="mt-0.5 text-xs text-muted">Runtime {runtime}</p>}
-          <p className="mt-1.5 text-xs font-medium text-fg">
-            {movie.soldOut ? 'Sold out' : `${movie.availableSeats} seats left`}
-          </p>
-        </div>
-      </div>
 
-      {movie.description && (
-        <p className="mt-4 text-sm leading-relaxed text-muted">{movie.description}</p>
+          {movie.description && (
+            <p className="mt-4 text-sm leading-relaxed text-muted">{movie.description}</p>
+          )}
+
+          <Button className="mt-5 w-full" disabled={cta.disabled} onClick={() => onBook(movie)}>
+            {cta.label}
+          </Button>
+        </>
       )}
-
-      <Button className="mt-5 w-full" disabled={cta!.disabled} onClick={() => onBook(movie)}>
-        {cta!.label}
-      </Button>
     </Sheet>
   );
 }

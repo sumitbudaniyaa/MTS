@@ -324,3 +324,26 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       in-flow tooltip — and listens on a wrapper span so **disabled** buttons still explain
       themselves, which is the whole point for locked controls. Replaced the native `title`
       attributes so there is no double tooltip. **33/33 tests green.**
+- [x] **Bottom-sheet open animation fixed** (user app). The movie-details sheet appeared
+      instantly while the change-password/login/tickets sheets slid up. Two causes, both fixed:
+      `Sheet` waited a single `requestAnimationFrame` before flipping the transform, but that
+      callback runs *before the paint of the frame the panel mounted in*, so both positions
+      could land in one paint and the transition never ran — now a double rAF, which guarantees
+      the closed position is painted first. And `MovieDetailsSheet` returned a *different*
+      `Sheet` element from an early return instead of driving one element with `open={!!movie}`
+      like every other caller. The poster `<img>` also got `decoding="async"`: posters are
+      base64 data URLs and can be megabytes, and decoding one on the main thread stalls exactly
+      the frame the slide-up needs.
+- [x] **Seat map is zoomable and looks like an auditorium** (`SeatPickerPage`). Pinch-to-zoom
+      (plus ctrl/⌘+wheel on desktop and a −/%/+ pill, where the % chip fits to width), 0.5×–2.4×,
+      **auto-fitted on open** so a 20-seat row doesn't start half off-screen. Zoom scales the
+      seat/gap/label sizes through CSS variables rather than applying a `transform: scale`, so
+      the layout reflows, the scroll container's extents stay correct with no measuring, and
+      seat numbers stay crisp instead of turning into blurred bitmaps. The gesture listeners are
+      bound by hand with `{ passive: false }` — React registers touchmove/wheel as passive at
+      the root, where `preventDefault` is a no-op, and the page itself can't pinch-zoom
+      (`maximum-scale=1` in the viewport meta). Visually: a curved screen spanning the exact
+      seat-block width with the light it throws fading over the front rows, seat-shaped keys
+      (rounded shoulders, flat base), row letters in both gutters, and lifted/ringed selected
+      seats. Taken seats went from near-black to a muted `fg/25` so the eye lands on what's
+      still free.
