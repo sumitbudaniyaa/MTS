@@ -19,6 +19,11 @@ const REFRESH_COOKIE_PREFIX = 'refresh_token';
 /** Legacy shared cookie, still honoured when a client doesn't declare its audience. */
 const LEGACY_REFRESH_COOKIE = REFRESH_COOKIE_PREFIX;
 
+/** Every per-app cookie name, for the un-declared-audience fallback in `refreshController`. */
+const SCOPED_COOKIE_NAMES = ['admin', 'user', 'scanner'].map(
+  (aud) => `${REFRESH_COOKIE_PREFIX}_${aud}`,
+);
+
 /** The app a role belongs to. ADMIN and SUPER_ADMIN share the admin portal, so one cookie. */
 function audienceOf(role: Role): 'admin' | 'user' | 'scanner' {
   if (role === Roles.USER) return 'user';
@@ -151,7 +156,17 @@ export const refreshController = asyncHandler(async (req: Request, res: Response
   // Prefer the calling app's own cookie; fall back to the legacy shared one so sessions
   // created before per-app cookies existed survive exactly one more refresh.
   const scopedName = audienceRole ? refreshCookieName(audienceRole) : undefined;
-  const raw = (scopedName ? cookies[scopedName] : undefined) ?? cookies[LEGACY_REFRESH_COOKIE];
+  let raw = (scopedName ? cookies[scopedName] : undefined) ?? cookies[LEGACY_REFRESH_COOKIE];
+
+  // A client that doesn't declare its audience is a frontend build from before per-app cookies
+  // existed. It can only ever ask for the legacy cookie — which no current login issues — so it
+  // 401s on every single reload and logs itself out, while a redeployed sibling app on the same
+  // browser works fine. Deploys drift, so don't let that be fatal: when the jar holds exactly
+  // one per-app cookie there is nothing to disambiguate, and it is unambiguously this caller's.
+  if (!raw && !audienceRole) {
+    const present = SCOPED_COOKIE_NAMES.filter((name) => cookies[name]);
+    if (present.length === 1) raw = cookies[present[0]!];
+  }
   if (!raw) throw ApiError.unauthorized('Missing refresh token');
 
   // Rotating a token that belongs to a DIFFERENT app must fail outright. Without this the

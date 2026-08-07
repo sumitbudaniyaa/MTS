@@ -143,7 +143,7 @@ Base path `/api/v1`. Full surface in [architecture.md](architecture.md#71-api-su
 | bookings | create/list/get/cancel · `/bookings/allowance/:movieId` |
 | attendance | `/attendance/verify` · `/attendance/movies/:id/summary` |
 | reports/audit | `/reports/overview` · `/reports/movies/:id` · `/audit-logs` |
-| realtime | socket.io at `/socket.io`, room `movie:<id>`, event `seats:update` |
+| realtime | socket.io at `/socket.io` — room `movie:<id>` → `seats:update`; room `admin:movies` (ADMIN only) → `movie:update` |
 
 ### End-to-end flow
 1. Admin → **Auditorium**: design rows/seats + allowed ranks → Save.
@@ -189,9 +189,23 @@ ping `/health` with UptimeRobot so the free dyno doesn't sleep), the **three app
 
 **Vercel — each app** (one project per app, root dir `apps/admin` / `apps/user` / `apps/scanner`):
 - Build: `npm install && npm run build` · Output: `dist` · Framework: Vite
-- Env: `VITE_API_URL=https://<api>.onrender.com/api/v1` (the `/api/v1` is auto-appended if
-  you omit it). SPA routing is handled by each app's `vercel.json`.
+- Env: **`VITE_API_URL=/api/v1`** (relative — see below) and
+  **`VITE_SOCKET_URL=https://<api>.onrender.com`**.
 - ⚠️ Vercel bakes env vars at **build time** — set the var, then trigger a fresh deploy.
+
+> **Why the API is proxied, not called directly.** Each app's `vercel.json` rewrites
+> `/api/v1/*` to the Render API. Pointing `VITE_API_URL` straight at `onrender.com` works on
+> desktop and **fails on every phone**: the refresh cookie is then a *third-party* cookie
+> (`vercel.app` page, `onrender.com` cookie), and Safari/iOS block those outright — login
+> succeeds, then the session evaporates on the next reload. Proxying makes the cookie
+> first-party to each app's own domain, which also retires the shared-cookie-jar problem
+> entirely. The rewrite destination is a **literal host** (Vercel does not interpolate env vars
+> in `vercel.json`), so update all three files if the API moves.
+>
+> A Vercel rewrite does **not** carry a WebSocket upgrade, which is why `VITE_SOCKET_URL`
+> points at the API host directly. That stays cross-site and is fine — the socket handshake
+> authenticates with the access token, not a cookie. The Vercel origins must therefore stay in
+> `CORS_ORIGINS`, which the socket server uses.
 
 **Gotchas:** devDependencies are needed to compile the API, so the build command uses
 `--include=dev`. For cross-site cookies you MUST use `COOKIE_SAMESITE=none` + `COOKIE_SECURE=true`.

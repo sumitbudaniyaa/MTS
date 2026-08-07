@@ -113,6 +113,11 @@ Personnel **ranks** (OFFICER/JCO/JAWAN) gate seat booking — see §3.10.
   one app overwrote the others' cookie, and reloading then rotated the wrong app's token,
   returned the wrong role and made the client log itself out. Each app declares its audience on
   `POST /auth/refresh`, and `rotateRefresh` **rejects a token belonging to another app**.
+  A client that declares **no** audience is a frontend build from before this scheme: it can
+  only ask for the legacy cookie, which no current login issues, so it 401s on every reload
+  while a redeployed sibling app on the same browser works fine. Deploys drift, so the server
+  falls back to the single per-app cookie in the jar when there is exactly one — and refuses
+  when there are several, rather than guessing and handing one app another's session.
 - Refresh tokens are **rotated**: each use revokes the old and issues a new one in the same
   `family`. Reuse of a revoked token revokes the entire family (theft detection).
 - Logout revokes the active refresh family. It is authorized by **possession of the refresh
@@ -122,7 +127,22 @@ Personnel **ranks** (OFFICER/JCO/JAWAN) gate seat booking — see §3.10.
 - Refresh tokens are stored **hashed** (never plaintext) in `refreshtokens`.
 - Cookie attributes are env-driven: `COOKIE_SECURE`, `COOKIE_DOMAIN`, and **`COOKIE_SAMESITE`**
   (`strict` for same-site / one origin; **`none` + `Secure=true`** for cross-site hosting such
-  as apps on Vercel + API on Render).
+  as apps on Vercel + API on Render). Boot **refuses to start** on `none` without `Secure`, or
+  on `COOKIE_DOMAIN=localhost` — browsers discard both silently, which presents as "the app
+  logs me out on refresh" with nothing in the logs.
+- **The API is proxied through each app's own origin** (`vercel.json` rewrites `/api/v1/*` to
+  the API host; `VITE_API_URL` is the relative `/api/v1`). This is not a convenience — it is
+  what makes the refresh cookie **first-party**. Served cross-site, a `vercel.app` page holding
+  an `onrender.com` cookie is a *third-party* cookie, and Safari/iOS block those outright: login
+  succeeds, the browser then refuses to store or send it, and the session dies on every reload.
+  It fails on phones while desktop Chrome works, so it looks like an app bug rather than a
+  cookie-policy one. `SameSite=none` + correct CORS do **not** help — the block is unconditional.
+  A side effect worth knowing: each app now owns a cookie on its own domain, so the shared
+  cookie jar that forced per-app cookie *names* no longer exists (the naming stays, as the
+  server still supports direct same-host deployments).
+  **Sockets bypass the proxy** (`VITE_SOCKET_URL` → API host) because a Vercel rewrite does not
+  carry a WebSocket upgrade. That stays cross-site safely: the handshake authenticates with the
+  access token, not a cookie — which is also why the Vercel origins must stay in `CORS_ORIGINS`.
 - Rotation is **resilient to the reload / two-tab race**: a just-rotated token is accepted only
   within a **30 s grace window** and re-issues a fresh token, so legitimate sessions are never
   spuriously logged out. Presenting a rotated token **after** the grace window is treated as
@@ -415,7 +435,8 @@ Notable post-build changes folded in:
 - Per-movie **`openToAll`** admin toggle bypasses rank-gating on seat booking.
 - Scanner: movie list → live scan → result bar (auto-dismiss 3s), robust camera w/ fallback.
 
-Deploy: PM2 `ecosystem.config.cjs` (cluster mode) for the API; apps served by any static host
+Deploy: Vercel (apps, each proxying `/api/v1` to the API — see §3.5) + Render (API) + Atlas;
+or PM2 `ecosystem.config.cjs` for the API with apps on any static host
 (Vite build output). Dev: root `npm run dev` interactive launcher. See README.
 
 ### 7.1 API surface (`/api/v1`)

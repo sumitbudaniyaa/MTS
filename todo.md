@@ -398,3 +398,26 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       jump pages under the reader's cursor. Verified end-to-end against a running server: an
       admin socket received `movie:update {status: POOL_RELEASED}` from a real scheduler tick,
       and a USER socket that emitted `admin:join` received nothing.
+- [x] **Refresh survives a stale frontend deploy.** Per-app refresh cookies require the client
+      to declare its app on `POST /auth/refresh`; a bundle built before that change sends no
+      `role`, so the server could only offer it the legacy shared cookie — which no current
+      login issues — and it 401'd on every single reload while a redeployed sibling app on the
+      same browser stayed signed in. That asymmetry (admin fine, user + scanner logging out, on
+      desktop as well as mobile, with correct cross-site cookie config) is the signature. The
+      server now falls back to the one per-app cookie present when there is exactly one, and
+      still refuses when several are — guessing there would hand one app another's session.
+      **35/35 tests** (added: bodyless refresh succeeds with one app signed in, 401s with two).
+- [x] **Mobile-only logout-on-refresh fixed: the API is now proxied through each app's own
+      origin.** Symptom was user + scanner signing out on every reload on phones, while the
+      admin app (used on desktop) was fine. Everything was correctly configured — verified
+      against production: the deployed bundle sends its `role`, the API issues
+      `refresh_token_user; Secure; SameSite=None`, and CORS returns
+      `Access-Control-Allow-Credentials: true` for the exact origin. The browser was refusing
+      the cookie anyway: `vercel.app` page + `onrender.com` cookie makes it **third-party**, and
+      Safari/iOS block those by default while desktop Chrome still allows them. Each app's
+      `vercel.json` now rewrites `/api/v1/*` to the API host and `VITE_API_URL` is the relative
+      `/api/v1`, so the cookie is first-party to the app's own domain. Applied to all three apps,
+      not just the broken two — admin only works today because Chrome hasn't finished its
+      third-party cookie phase-out. Sockets keep pointing at the API host via a new
+      `VITE_SOCKET_URL`, since a Vercel rewrite does not carry a WebSocket upgrade; that stays
+      cross-site safely because the handshake uses the access token, not a cookie.

@@ -215,6 +215,52 @@ describe('auth', () => {
     }
   });
 
+  it('still refreshes a client that does not declare its app (stale frontend build)', async () => {
+    const { url, close } = await startApp();
+    // A frontend deployed before per-app cookies existed sends a bodyless refresh. It can only
+    // ask for the legacy shared cookie, which no current login issues — so without a fallback
+    // it 401s on every reload and logs itself out, while a redeployed sibling app on the same
+    // browser keeps working. That asymmetry is the whole bug this guards against.
+    const noRole = (cookie: string) =>
+      fetch(`${url}/api/v1/auth/refresh`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+
+    try {
+      await ScannerModel.create({
+        mobile: '9000000002',
+        passwordHash: await hashPassword(PASSWORD),
+        role: Roles.SCANNER,
+      });
+      const userLogin = await fetch(`${url}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mobile: MOBILE, password: PASSWORD, role: Roles.USER }),
+      });
+      const userCookie = refreshCookie(userLogin, 'user')!;
+
+      // One app signed in: nothing to disambiguate, so the session survives the reload.
+      const solo = await noRole(userCookie);
+      expect(solo.status).toBe(200);
+      expect(((await solo.json()) as { user: { role: string } }).user.role).toBe(Roles.USER);
+
+      // Two apps signed in: the caller is genuinely unidentifiable, so refuse rather than
+      // guess and hand one app the other's session.
+      const scannerLogin = await fetch(`${url}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mobile: '9000000002', password: PASSWORD, role: Roles.SCANNER }),
+      });
+      const scannerCookie = refreshCookie(scannerLogin, 'scanner')!;
+      const ambiguous = await noRole(`${userCookie}; ${scannerCookie}`);
+      expect(ambiguous.status).toBe(401);
+    } finally {
+      close();
+    }
+  });
+
   it('blocks /me without a token', async () => {
     const { url, close } = await startApp();
     try {
