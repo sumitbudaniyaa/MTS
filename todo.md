@@ -463,3 +463,48 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       until they reloaded — which looks exactly like "open to all didn't work" and is the most
       likely way to conclude the feature is broken. The user app re-reads the map on the event.
       **39/39 tests.**
+- [x] **Admin mobile polish pass.**
+      - **Button sizes are consistent across every dialog.** Movie/settings/unit/auditorium
+        footers used `size="sm"` (32px) while the scanner form used the default (40px). Stripped
+        the override from all 18 footer buttons rather than adding it to the odd one out: 32px
+        is under the 44px touch guidance, and the footer is the one place every dialog agrees.
+      - **The new-movie dialog no longer slides sideways.** `Modal` never locked the page behind
+        it, so on a phone — where the page is often wider than the viewport — the body kept its
+        own scroll and the dialog drifted under your thumb while typing. Now locks
+        `overflow`/`touch-action` while open. Height also moved from `90vh` to
+        `calc(100dvh-2rem)`: mobile browser chrome makes `vh` taller than the visible area, so a
+        90vh dialog ran off the bottom.
+      - **Movie cards and table rows show the poster** (2:3 thumbnail, film-glyph fallback so a
+        row without artwork still aligns), for both tiers.
+      - **Poster upload redesigned** (both create and edit forms): one large drop-target that
+        becomes the preview, with Replace/Remove, drag-and-drop, and the size limit stated up
+        front. It was a 12×16px thumbnail beside a text link — too small on a phone to tell one
+        poster from another.
+- [x] **No more zoom-on-focus in any app.** iOS Safari zooms the viewport when a focused field's
+      text is under 16px and never zooms back out, leaving the user panning a magnified page.
+      All three apps' `.input` was `text-sm` (14px). Form controls are now 16px below the `sm`
+      breakpoint and keep the tighter type on wider, pointer-precise screens.
+- [x] **The super-admin console works on a phone.** The 16rem sidebar was permanent chrome,
+      leaving a handset almost no room for the tables the console is built from. Below `lg` it is
+      now a slide-in drawer behind a hamburger, with a scrim, closing on navigation; the desktop
+      layout is untouched. Dialog form grids (`grid-cols-2/3`) stack on small screens; stat-tile
+      grids stay 2-up, which reads fine. **39/39 tests, all four apps build.**
+- [x] **Seat picker shows the personal cap, and the cap is enforced where it matters.** Booking
+      checked the family limit but **holding did not** — so a user could select any number of
+      seats, tie them all up for the hold window where nobody else could take them, and only get
+      an error on Confirm. `holdSeats` now enforces it, counting **issued tickets + seats already
+      held**; re-holding a seat you already hold is not a new seat and still succeeds, and
+      releasing one frees the slot again. The seat map ships
+      `allowance: { familySize, booked, canSelect }`, so the picker renders a live `2/4 selected`
+      chip in the header from the moment it opens (not only once the limit bites), greys out
+      further free seats, and refuses the tap with an explanation instead of firing a request
+      that will fail. The picker also re-adopts seats the server still holds after a reload, so
+      the counter, the cap and Confirm can't disagree about what is selected. **40/40 tests.**
+- [x] **Scan removed from the bottom pill, moved to the header.** The three-tab pill was tight
+      on a 320px viewport and gave the camera page no more room than any other tab. Scan is now
+      an inverted (high-contrast) icon button in the OpsLayout header; tapping it opens a
+      **standalone full-screen page** outside the shell — the camera gets the full viewport and
+      the pill bar can't cover the result strip. The scan page has its own sticky header with a
+      **back button** (`navigate(-1)`). The `/scan` route is still protected but no longer nested
+      inside `OpsLayout`'s `<Outlet>`. The pill is now two tabs (Movies, Scanners), which sit
+      comfortably on any phone. **40/40 tests, admin builds clean.**

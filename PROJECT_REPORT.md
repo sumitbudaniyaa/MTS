@@ -30,7 +30,10 @@ The platform is delivered as **four applications** sharing one secure API:
 All three web apps are mobile-friendly; the User and Scanner apps are mobile-first, the Admin
 Portal is desktop-first with light/dark themes (light by default) and a soft-SaaS visual
 language: a light neutral canvas, white rounded cards with hairline borders, and a grouped
-sidebar with a breadcrumb topbar.
+sidebar with a breadcrumb topbar. The SUPER_ADMIN sidebar collapses to a slide-in drawer on
+small screens; the ADMIN ops layout is already mobile-first. All apps prevent the iOS
+zoom-on-focus issue (form controls are ≥ 16 px on phones) and modal dialogs lock the page
+behind them to prevent horizontal drift.
 
 ---
 
@@ -59,7 +62,11 @@ sidebar with a breadcrumb topbar.
   show ends and state exactly when that will be.
 - **Rank gating** — a user may only book seats their rank is permitted, with an admin override
   (**"Open to all ranks"**) per movie.
-- **Family limit** — a member may hold at most `family size` tickets per show (server-enforced).
+- **Family limit** — a member may hold at most `family size` tickets per show, enforced at **hold
+  time** (not only at booking). The seat picker shows a live `2/4 selected` chip, greys out
+  further seats, and refuses the tap with an explanation instead of letting a doomed selection
+  be made.
+- **Movie cards and table rows show the poster** (2:3 thumbnail with a film-glyph fallback).
 - **Cancellation** frees the seat immediately on the live map.
 
 ### Movies & Scheduling

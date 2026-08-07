@@ -309,7 +309,7 @@ function PersonnelFormModal({
         </>
       }
     >
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Input
           label="Mobile"
           error={errors.mobile?.message}
@@ -322,7 +322,7 @@ function PersonnelFormModal({
         />
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Select label="Rank" {...register('rank')}>
           <option value="OFFICER">Officer</option>
           <option value="JCO">JCO</option>
@@ -395,16 +395,16 @@ function EditPersonnelModal({
       title={`Edit ${person.mobile}`}
       footer={
         <>
-          <Button variant="secondary" size="sm" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button size="sm" loading={save.isPending} onClick={() => save.mutate()}>
+          <Button loading={save.isPending} onClick={() => save.mutate()}>
             Save
           </Button>
         </>
       }
     >
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Select label="Rank" value={rank} onChange={(e) => setRank(e.target.value as typeof rank)}>
           <option value="OFFICER">Officer</option>
           <option value="JCO">JCO</option>
@@ -551,10 +551,10 @@ function BulkUploadDialog({
       title="Bulk upload personnel"
       footer={
         <>
-          <Button variant="secondary" size="sm" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             Close
           </Button>
-          <Button size="sm" disabled={items.length === 0} loading={upload.isPending} onClick={() => upload.mutate()}>
+          <Button disabled={items.length === 0} loading={upload.isPending} onClick={() => upload.mutate()}>
             Import {items.length || ''}
           </Button>
         </>

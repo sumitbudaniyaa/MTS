@@ -227,10 +227,10 @@ function MyAccountDialog({ onClose }: { onClose: () => void }) {
       title="Edit my account"
       footer={
         <>
-          <Button variant="secondary" size="sm" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button size="sm" loading={save.isPending} onClick={() => save.mutate()}>
+          <Button loading={save.isPending} onClick={() => save.mutate()}>
             Save
           </Button>
         </>
@@ -240,7 +240,7 @@ function MyAccountDialog({ onClose }: { onClose: () => void }) {
       <Input label="Mobile" value={user?.mobile ?? ''} disabled />
       <div className="border-t border-border pt-3">
         <p className="mb-2 text-xs font-medium text-muted">Change password (optional)</p>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <PasswordInput
             label="Current"
             value={current}
@@ -378,16 +378,16 @@ function CreateAdminDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
       title="New administrator"
       footer={
         <>
-          <Button variant="secondary" size="sm" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button size="sm" disabled={!valid} loading={save.isPending} onClick={() => save.mutate()}>
+          <Button disabled={!valid} loading={save.isPending} onClick={() => save.mutate()}>
             Create
           </Button>
         </>
       }
     >
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Input
           label="Mobile"
           inputMode="numeric"
@@ -446,10 +446,10 @@ function EditAdminDialog({
       title={`Edit ${admin.mobile}`}
       footer={
         <>
-          <Button variant="secondary" size="sm" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button size="sm" loading={save.isPending} onClick={() => save.mutate()}>
+          <Button loading={save.isPending} onClick={() => save.mutate()}>
             Save
           </Button>
         </>

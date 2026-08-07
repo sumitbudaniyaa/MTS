@@ -315,6 +315,12 @@ populates to `null`, silently losing the attribution.
   each movie row re-opens it later. Both use `features/seats/AllocateSeatsModal.tsx`, so the
   "total must equal capacity" rule lives in exactly one place. Allocation is **optional** —
   skipping leaves every seat in the common pool, which the dialog states explicitly.
+- **Family limit is enforced at HOLD time**, not only at booking. A hold is a seat nobody else
+  can have, so leaving holds uncapped let one person tie up the auditorium a seat at a time and
+  only discover the limit on Confirm. `seatAllowance()` counts **issued tickets + seats
+  currently held**, and the seat map ships `allowance: { familySize, booked, canSelect }` so the
+  picker shows `2/4 selected`, greys out further seats and never lets a doomed selection be made.
+  Re-holding a seat you already hold is not a new seat and still succeeds.
 - **Holds & concurrency:** selecting a seat issues a hold (`seatHoldSeconds`) via atomic
   `findOneAndUpdate` (FREE → HELD by user); booking flips own-HELD/FREE → BOOKED, also
   atomic, so two users can never claim the same seat. Booking creates the usual Booking +
@@ -372,11 +378,16 @@ user + scanner are mobile-first.
 `App.tsx` picks a shell from the signed-in tier and declares **routes per tier** rather than
 filtering one list — an ADMIN typing `/audit` lands back on their own home instead of reaching
 a page that would 403 anyway.
-- **`OpsLayout`** (ADMIN): mobile-first, a sticky header and a bottom tab bar — Movies,
-  Scanners, Scan. No sidebar, no dashboard. Account actions (change password, sign out) live in
-  a sheet behind the header icon, because those can never be someone else's job even though the
-  Settings *page* moved to SUPER_ADMIN.
-- **`AppLayout`** (SUPER_ADMIN): the existing desktop sidebar console.
+- **`OpsLayout`** (ADMIN): mobile-first, a sticky header and a bottom pill with two tabs —
+  Movies and Scanners. **Scan** is a button in the header (inverted, high-contrast) that opens
+  a **standalone full-screen page** outside the shell — giving the camera the full viewport and
+  keeping the pill bar from covering the result strip. The scan page has its own back button.
+  Account actions (change password, sign out) live in a modal behind the header icon.
+- **`AppLayout`** (SUPER_ADMIN): the desktop sidebar console. Below `lg` the sidebar becomes a
+  **slide-in drawer** behind a hamburger icon — permanent 16rem chrome leaves a phone almost no
+  room for the tables this console is made of. A scrim + auto-close-on-navigation keep it out of
+  the way; the desktop layout is untouched. Dialog form grids (`grid-cols-2/3`) also stack on
+  small screens.
 
 Rendering waits for the silent re-auth to resolve before choosing: with the tier still unknown,
 either shell would flash the wrong chrome and the console's catch-all would bounce an ADMIN off
@@ -411,6 +422,15 @@ unmounting it or returning a different element per branch. Opening waits **two**
 flipping the transform — one is not enough, since that callback still runs before the paint of
 the frame the panel mounted in, landing both the open and closed positions in a single paint
 and skipping the animation entirely.
+
+**Modal scroll lock:** every `Modal` locks `overflow` + `touch-action` on `document.body`
+while open and restores them on close. Without it, the page behind a dialog is scrollable on
+phones (wider than the viewport), causing the dialog to drift horizontally.
+
+**iOS input-zoom fix:** all three apps set `font-size: 16px` on form controls below `640px`.
+iOS Safari zooms the viewport when a focused field is under 16px and never unzooms — the user
+is left panning a magnified page.
+
 **No React.StrictMode** in the web apps (its dev double-mount broke
 refresh-token rotation and the camera). Access token in memory; silent re-auth via cookie.
 Only one frontend env var: **`VITE_API_URL`** (build-time). It's normalized to **tolerate
@@ -426,8 +446,8 @@ config. See `apps/backend/.env.example`.
 
 ## 7. Current Status
 **All milestones + change requests + the seat epic are complete and verified** — backend
-**23/23 tests** (incl. throughput/contention benchmark, refresh-reuse detection, at-rest field
-encryption), **tsc + eslint clean**; admin/user/scanner all build + lint clean.
+**40/40 tests** (incl. throughput/contention benchmark, refresh-reuse detection, at-rest field
+encryption, seat-hold family cap), **tsc + eslint clean**; admin/user/scanner all build + lint clean.
 
 Backend (auth, units, personnel, movies, seats/quota, **seating**, bookings, attendance,
 audit, reports, admins) + cron jobs + socket.io + security pipeline. Admin Portal, User app,
@@ -466,7 +486,9 @@ Notable post-build changes folded in:
       opens) and a per-movie **"Open to all ranks"** toggle, plus a per-movie **Details dialog**
       (eye icon in the Movies table) showing the **seat layout with who booked each seat**
       (mobile / rank / unit), checked-in state, and the full bookings list (`GET
-      /seating/movies/:id/detail`).
+      /seating/movies/:id/detail`). **Movie cards and table rows show the poster** (2:3 thumbnail
+      with a film-glyph fallback). **Poster upload redesigned** into a drag-and-drop drop-target
+      that becomes the preview (both create and edit forms).
 - User app: browsable without login, **bottom-drawer login**, **profile page**, District-style
       movie cards, **floating pill nav**, seat-map booking (rapid double-taps de-duped via an
       in-flight guard). Movies shown early with **`bookingOpen`** flag; user sees "Booking opens

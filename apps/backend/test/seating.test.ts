@@ -162,3 +162,52 @@ describe('open to all', () => {
     });
   });
 });
+
+describe('family limit at hold time', () => {
+  it('refuses to hold more seats than the family size, before Confirm', async () => {
+    await AuditoriumModel.create({
+      name: 'Wide',
+      rows: [{ label: 'A', seats: [1, 2, 3, 4, 5].map((n) => ({ number: n, allowedRanks: [] })) }],
+    });
+    const unit = await UnitModel.create({ name: 'Limits' });
+    const startTime = new Date(Date.now() + 30 * 60_000);
+    const movie = await MovieModel.create({
+      title: 'Capped',
+      showDate: startTime,
+      startTime,
+      totalSeats: 5,
+      status: MovieStatus.SCHEDULED,
+    });
+    await seating.generateMovieSeats(movie.id);
+
+    // familySize = 1 + 0 spouse + 1 kid = 2.
+    const user = await UserModel.create({
+      mobile: '9000000041',
+      passwordHash: await hashPassword('Pass123'),
+      role: Roles.USER,
+      unit: unit._id,
+      rank: Rank.JAWAN,
+      numberOfKids: 1,
+    });
+    expect(user.familySize).toBe(2);
+
+    // The map tells the client its cap up front, so it can stop the selection itself.
+    const map = await seating.getMovieSeatMap(movie.id, user.id, Rank.JAWAN);
+    expect(map.allowance).toMatchObject({ familySize: 2, booked: 0, canSelect: 2 });
+
+    // Two seats: fine. A third: refused at HOLD, not deferred to Confirm — previously holding
+    // was unlimited and tied up seats nobody else could take.
+    expect((await seating.holdSeats(user.id, movie.id, ['A1'])).held).toEqual(['A1']);
+    expect((await seating.holdSeats(user.id, movie.id, ['A2'])).held).toEqual(['A2']);
+    await expect(seating.holdSeats(user.id, movie.id, ['A3'])).rejects.toMatchObject({
+      statusCode: 400,
+    });
+
+    // Re-holding a seat they already have is not a new seat, so it must still succeed.
+    expect((await seating.holdSeats(user.id, movie.id, ['A1'])).held).toEqual(['A1']);
+
+    // Releasing one frees an allocation slot again.
+    await seating.releaseSeats(user.id, movie.id, ['A2']);
+    expect((await seating.holdSeats(user.id, movie.id, ['A3'])).held).toEqual(['A3']);
+  });
+});

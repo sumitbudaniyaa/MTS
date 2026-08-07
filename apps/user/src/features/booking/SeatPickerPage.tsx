@@ -24,6 +24,8 @@ interface SeatView {
 interface SeatMap {
   rows: string[];
   seats: SeatView[];
+  /** How many seats this person may hold for this movie — the server's family-size cap. */
+  allowance?: { familySize: number; booked: number; canSelect: number };
 }
 
 const HOLD_SECONDS = 120;
@@ -124,13 +126,36 @@ export function SeatPickerPage() {
     return () => clearInterval(t);
   }, [selected.length === 0, refetch]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Re-adopt seats this user is already holding — after a reload the server still has them,
+  // and without this the counter, the cap and Confirm would each disagree about what is picked.
+  useEffect(() => {
+    const mine = data?.seats.filter((s) => s.mine && s.status === 'HELD').map((s) => s.label);
+    if (!mine?.length) return;
+    setSelected((sel) => {
+      const merged = [...new Set([...sel, ...mine])];
+      return merged.length === sel.length ? sel : merged;
+    });
+  }, [data]);
+
+  // Seats this person may pick in total. Tickets already issued to them for this movie are
+  // spent, so the cap shrinks accordingly.
+  const maxSelectable = data?.allowance?.canSelect ?? Infinity;
+  const atLimit = selected.length >= maxSelectable;
+
   const statusOf = (s: SeatView): Status => live[s.label] ?? s.status;
 
   async function toggle(seat: SeatView) {
     // Ignore repeat taps on a seat that already has a hold/release in flight.
     if (pendingRef.current.has(seat.label)) return;
-    pendingRef.current.add(seat.label);
     const isSelected = selected.includes(seat.label);
+    // Stop at the family limit rather than letting the hold fail. Deselecting is always fine.
+    if (!isSelected && atLimit) {
+      toast.warning(
+        `You can book ${maxSelectable} seat${maxSelectable === 1 ? '' : 's'} for this movie`,
+      );
+      return;
+    }
+    pendingRef.current.add(seat.label);
     try {
       if (isSelected) {
         await api.post(`/seating/movies/${movieId}/release`, { labels: [seat.label] });
@@ -266,8 +291,24 @@ export function SeatPickerPage() {
           ‹ Back
         </button>
         <span className="text-sm font-medium">Select seats</span>
-        <span className="w-10 text-right text-xs text-muted">
-          {selected.length > 0 ? `${mm}:${ss}` : ''}
+        {/* The cap is the single most useful thing on this screen: it is why a tap stops
+            working. Shown from the start, not only once it is hit. */}
+        <span className="flex min-w-[4.5rem] items-center justify-end gap-2">
+          {Number.isFinite(maxSelectable) && (
+            <span
+              className={cn(
+                'rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums',
+                atLimit ? 'bg-accent/10 text-accent' : 'bg-surface-2 text-muted',
+              )}
+            >
+              {selected.length}/{maxSelectable}
+            </span>
+          )}
+          {selected.length > 0 && (
+            <span className="text-xs tabular-nums text-muted">
+              {mm}:{ss}
+            </span>
+          )}
         </span>
       </header>
 
@@ -313,7 +354,9 @@ export function SeatPickerPage() {
                             selected.includes(seat.label) || (seat.mine && st === 'HELD');
                           const taken = st === 'BOOKED' || (st === 'HELD' && !isMine);
                           const rankBlocked = st === 'FREE' && !seat.bookable && !isMine;
-                          const disabled = taken || rankBlocked;
+                          // Free, allowed, but you have already picked your allocation.
+                          const capped = !isMine && !taken && !rankBlocked && atLimit;
+                          const disabled = taken || rankBlocked || capped;
                           return (
                             <button
                               key={seat.label}
@@ -322,7 +365,9 @@ export function SeatPickerPage() {
                               title={
                                 rankBlocked
                                   ? `Restricted to ${seat.allowedRanks.join('/')}`
-                                  : seat.label
+                                  : capped
+                                    ? `You can book ${maxSelectable} seat(s) for this movie`
+                                    : seat.label
                               }
                               style={{
                                 width: 'var(--seat)',
@@ -338,7 +383,9 @@ export function SeatPickerPage() {
                                 !isMine &&
                                   st === 'FREE' &&
                                   seat.bookable &&
+                                  !capped &&
                                   'border border-border bg-surface text-fg active:scale-95',
+                                capped && 'border border-border bg-surface text-muted/40',
                                 taken && 'cursor-not-allowed bg-fg/25 text-fg/40',
                                 rankBlocked &&
                                   'cursor-not-allowed border border-dashed border-border text-muted/50',
@@ -390,7 +437,11 @@ export function SeatPickerPage() {
       <div className="border-t border-border bg-surface px-4 py-3">
         <div className="mb-2 flex items-center justify-between text-sm">
           <span className="text-muted">
-            {selected.length > 0 ? `${selected.length} seat(s): ${selected.join(', ')}` : 'No seats selected'}
+            {selected.length > 0
+              ? `${selected.length} seat(s): ${selected.join(', ')}`
+              : Number.isFinite(maxSelectable)
+                ? `Pick up to ${maxSelectable} seat${maxSelectable === 1 ? '' : 's'}`
+                : 'No seats selected'}
           </span>
         </div>
         <Button className="w-full" disabled={selected.length === 0} loading={booking} onClick={confirm}>

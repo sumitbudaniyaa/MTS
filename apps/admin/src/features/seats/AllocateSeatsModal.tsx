@@ -91,12 +91,12 @@ export function AllocateSeatsModal({
       title={movieTitle ? `Allocate seats — ${movieTitle}` : 'Allocate seats'}
       footer={
         <>
-          <Button variant="secondary" size="sm" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             {/* Allocation is optional: an un-allocated movie still sells from the open pool. */}
             {isNewMovie ? 'Skip for now' : 'Close'}
           </Button>
           <Button
-            size="sm"
+           
             onClick={() => save.mutate()}
             disabled={!matches}
             loading={save.isPending}

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { Plus, Trash2, Pencil, Eye, LayoutGrid } from 'lucide-react';
+import { Plus, Trash2, Pencil, Eye, LayoutGrid, ImagePlus, Film } from 'lucide-react';
 import { api, apiErrorMessage } from '@/lib/api';
 import type { Movie, MovieStatus, Paginated } from '@/types';
 import { PageHeader, Badge, Card, LoadingState, EmptyState, ErrorState } from '@/components/ui/Misc';
@@ -183,8 +183,9 @@ export function MoviesPage() {
           <div className="space-y-2.5 md:hidden">
             {data.items.map((m) => (
               <Card key={m.id} className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
+                <div className="flex items-start gap-3">
+                  <Poster src={m.poster} className="h-[4.5rem] w-12" />
+                  <div className="min-w-0 flex-1">
                     <h2 className="truncate font-medium text-fg">{m.title}</h2>
                     <p className="mt-0.5 text-xs text-muted">{fmt(m.startTime)}</p>
                   </div>
@@ -217,7 +218,12 @@ export function MoviesPage() {
           >
             {data.items.map((m) => (
               <tr key={m.id}>
-                <Td className="font-medium">{m.title}</Td>
+                <Td className="font-medium">
+                  <div className="flex items-center gap-2.5">
+                    <Poster src={m.poster} className="h-11 w-[1.85rem]" />
+                    <span className="min-w-0 truncate">{m.title}</span>
+                  </div>
+                </Td>
                 <Td>{fmt(m.startTime)}</Td>
                 <Td>
                   {m.seatsBooked}/{m.totalSeats}
@@ -358,11 +364,11 @@ function MovieFormModal({
       title="New movie"
       footer={
         <>
-          <Button variant="secondary" size="sm" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
           <Button
-            size="sm"
+           
             disabled={totalSeats === 0}
             onClick={handleSubmit((v) => save.mutate(v))}
             loading={save.isPending}
@@ -375,35 +381,7 @@ function MovieFormModal({
       <Input label="Title" error={errors.title?.message} {...register('title', { required: 'Required' })} />
       <Input label="Description (optional)" {...register('description')} />
 
-      {/* Poster upload */}
-      <div>
-        <label className="label">Poster</label>
-        <div className="flex items-center gap-3">
-          {poster ? (
-            <img src={poster} alt="poster" className="h-16 w-12 rounded-md object-cover" />
-          ) : (
-            <div className="flex h-16 w-12 items-center justify-center rounded-md border border-dashed border-border text-[10px] text-muted">
-              none
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <label className="cursor-pointer rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-surface-2">
-              Upload image
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => onPoster(e.target.files?.[0])}
-              />
-            </label>
-            {poster && (
-              <button type="button" className="text-xs text-danger" onClick={() => setPoster('')}>
-                Remove
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+      <PosterField value={poster} onChange={setPoster} onFile={onPoster} />
 
       <Input
         label="Show date & time"
@@ -509,10 +487,10 @@ function EditMovieModal({
       title="Edit movie"
       footer={
         <>
-          <Button variant="secondary" size="sm" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button size="sm" loading={save.isPending} onClick={handleSubmit((v) => save.mutate(v))}>
+          <Button loading={save.isPending} onClick={handleSubmit((v) => save.mutate(v))}>
             Save
           </Button>
         </>
@@ -520,29 +498,7 @@ function EditMovieModal({
     >
       <Input label="Title" error={errors.title?.message} {...register('title', { required: 'Required' })} />
       <Input label="Description" {...register('description')} />
-      <div>
-        <label className="label">Poster</label>
-        <div className="flex items-center gap-3">
-          {poster ? (
-            <img src={poster} alt="poster" className="h-16 w-12 rounded-md object-cover" />
-          ) : (
-            <div className="flex h-16 w-12 items-center justify-center rounded-md border border-dashed border-border text-[10px] text-muted">
-              none
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <label className="cursor-pointer rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-surface-2">
-              Upload image
-              <input type="file" accept="image/*" className="hidden" onChange={(e) => onPoster(e.target.files?.[0])} />
-            </label>
-            {poster && (
-              <button type="button" className="text-xs text-danger" onClick={() => setPoster('')}>
-                Remove
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+      <PosterField value={poster} onChange={setPoster} onFile={onPoster} />
       <Input
         label="Show date & time"
         type="datetime-local"
@@ -800,5 +756,122 @@ function LegendDot({ cls, label }: { cls: string; label: string }) {
     <span className="flex items-center gap-1">
       <span className={cn('h-3 w-3 rounded', cls)} /> {label}
     </span>
+  );
+}
+
+/**
+ * Poster picker. A single large drop-target that *is* the preview once an image is chosen —
+ * the old version was a thumbnail beside a text button, which on a phone gave you a 12x16
+ * preview too small to tell one poster from another and two tiny tap targets.
+ *
+ * Accepts a drop as well as a tap, and keeps the 2:3 poster aspect so what you see here is
+ * what the card and the user app will show.
+ */
+function PosterField({
+  value,
+  onChange,
+  onFile,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onFile: (file: File | undefined) => void;
+}) {
+  const [over, setOver] = useState(false);
+
+  return (
+    <div>
+      <label className="label">Poster</label>
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setOver(true);
+        }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setOver(false);
+          onFile(e.dataTransfer.files?.[0]);
+        }}
+        className={cn(
+          'relative overflow-hidden rounded-2xl border-2 border-dashed transition-colors',
+          over ? 'border-accent bg-accent/5' : 'border-border bg-surface-2/40',
+        )}
+      >
+        {value ? (
+          <div className="flex items-center gap-4 p-3">
+            <img
+              src={value}
+              alt=""
+              decoding="async"
+              className="h-28 w-[4.75rem] shrink-0 rounded-xl object-cover ring-1 ring-border"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-fg">Poster added</p>
+              <p className="mt-0.5 text-xs text-muted">Shown on the movie card and in the app.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <label className="cursor-pointer rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-2">
+                  Replace
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => onFile(e.target.files?.[0])}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-danger hover:bg-surface-2"
+                  onClick={() => onChange('')}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <label className="flex cursor-pointer flex-col items-center justify-center gap-1.5 px-4 py-7 text-center">
+            <ImagePlus className="h-6 w-6 text-muted" />
+            <span className="text-sm font-medium text-fg">Add a poster</span>
+            <span className="text-xs text-muted">Tap to choose &middot; or drop an image here</span>
+            <span className="text-[11px] text-muted">JPG or PNG, up to 4&nbsp;MB</span>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => onFile(e.target.files?.[0])}
+            />
+          </label>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Movie poster thumbnail, 2:3 like the real thing. Falls back to a film glyph rather than an
+ * empty box so a row without artwork still reads as a movie and the list stays aligned.
+ */
+function Poster({ src, className }: { src?: string; className?: string }) {
+  if (!src) {
+    return (
+      <div
+        className={cn(
+          'flex shrink-0 items-center justify-center rounded-lg bg-surface-2 ring-1 ring-border',
+          className,
+        )}
+      >
+        <Film className="h-4 w-4 text-muted" />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt=""
+      // Posters are base64 data URLs and can be large; keep the decode off the main thread.
+      decoding="async"
+      loading="lazy"
+      className={cn('shrink-0 rounded-lg bg-surface-2 object-cover ring-1 ring-border', className)}
+    />
   );
 }

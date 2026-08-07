@@ -45,8 +45,17 @@ function OpsRoutes() {
       >
         <Route path="/movies" element={<MoviesPage />} />
         <Route path="/scanners" element={<ScannersPage />} />
-        <Route path="/scan" element={<ScanPage />} />
       </Route>
+      {/* Scan opens as a standalone full-screen page — outside the shell so the camera gets the
+          full viewport and the pill bar doesn't cover the result strip at the bottom. */}
+      <Route
+        path="/scan"
+        element={
+          <ProtectedRoute>
+            <ScanPage />
+          </ProtectedRoute>
+        }
+      />
       <Route path="*" element={<Navigate to="/movies" replace />} />
     </Routes>
   );

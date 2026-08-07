@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
+  Menu,
   Building2,
   Users,
   Film,
@@ -78,6 +80,12 @@ export function AppLayout() {
   const { isSuperAdmin } = useRole();
   const navigate = useNavigate();
   const crumb = useCrumb();
+  const { pathname } = useLocation();
+  // Below `lg` the sidebar becomes a slide-in drawer: 16rem of permanent chrome leaves a phone
+  // almost no room for the tables this console is made of.
+  const [navOpen, setNavOpen] = useState(false);
+  // Close it on navigation, or it stays over the page you just asked for.
+  useEffect(() => setNavOpen(false), [pathname]);
 
   const onLogout = async () => {
     await logout();
@@ -88,7 +96,22 @@ export function AppLayout() {
 
   return (
     <div className="flex h-full bg-bg">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-surface">
+      {/* Scrim — only present while the drawer is open, and only below lg. */}
+      {navOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px] lg:hidden"
+          onClick={() => setNavOpen(false)}
+          aria-hidden
+        />
+      )}
+
+      <aside
+        className={cn(
+          'flex w-64 shrink-0 flex-col border-r border-border bg-surface',
+          'fixed inset-y-0 left-0 z-50 transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0',
+          navOpen ? 'translate-x-0 shadow-lift' : '-translate-x-full',
+        )}
+      >
         {/* Workspace mark */}
         <div className="p-3">
           <div className="flex items-center gap-2.5 rounded-xl border border-border bg-surface px-3 py-2.5 shadow-soft">
@@ -166,8 +189,15 @@ export function AppLayout() {
 
       {/* Main */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border bg-surface px-6">
-          <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
+        <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-4 sm:px-6">
+          <button
+            onClick={() => setNavOpen(true)}
+            className="-ml-1 rounded-lg p-2 text-muted transition hover:bg-surface-2 hover:text-fg lg:hidden"
+            aria-label="Open navigation"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <nav aria-label="Breadcrumb" className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
             {/* The dashboard is the root, so it isn't also its own parent. */}
             {crumb !== 'Dashboard' && (
               <>
@@ -186,7 +216,7 @@ export function AppLayout() {
             {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
         </header>
-        <main className="flex-1 overflow-auto bg-bg p-6">
+        <main className="flex-1 overflow-auto bg-bg p-4 sm:p-6">
           <Outlet />
         </main>
       </div>

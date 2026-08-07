@@ -12,8 +12,9 @@ import { cn } from '@/lib/cn';
 
 /**
  * Shell for the **operational ADMIN**: the person who actually runs shows, usually from a
- * phone at the venue. Three things, no sidebar, no dashboard — schedule the movie, manage the
- * door staff, work the door yourself.
+ * phone at the venue. Two tabs (Movies, Scanners) + a scan button in the header that opens
+ * a dedicated full-screen scan page with its own back button — keeping the pill compact and
+ * giving the camera the full viewport.
  *
  * The full desktop console (units, personnel, admin accounts, auditorium, reports, audit,
  * timings) belongs to SUPER_ADMIN and is a different shell entirely — see `AppLayout`.
@@ -21,11 +22,11 @@ import { cn } from '@/lib/cn';
 const tabs = [
   { to: '/movies', label: 'Movies', icon: Film },
   { to: '/scanners', label: 'Scanners', icon: Users },
-  { to: '/scan', label: 'Scan', icon: ScanLine },
 ];
 
 export function OpsLayout() {
   const user = useAuthStore((s) => s.user);
+  const navigate = useNavigate();
   const [account, setAccount] = useState(false);
 
   return (
@@ -34,14 +35,25 @@ export function OpsLayout() {
     <div className="min-h-dvh bg-bg">
       <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-border bg-surface/90 px-4 backdrop-blur">
         <span className="text-sm font-semibold text-fg">Auditorium Ops</span>
-        <button
-          type="button"
-          onClick={() => setAccount(true)}
-          aria-label="Account"
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-muted active:scale-95"
-        >
-          <UserCog className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigate('/scan')}
+            aria-label="Scan tickets"
+            title="Scan tickets"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-fg text-bg active:scale-95"
+          >
+            <ScanLine className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setAccount(true)}
+            aria-label="Account"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-muted active:scale-95"
+          >
+            <UserCog className="h-4 w-4" />
+          </button>
+        </div>
       </header>
 
       <main className="px-4 py-5 pb-[calc(7rem+env(safe-area-inset-bottom))]">

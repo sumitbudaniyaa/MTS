@@ -53,3 +53,18 @@ input[type='number'] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+/*
+ * iOS Safari zooms the whole viewport when a focused field's text is smaller than 16px, and it
+ * never zooms back out — the user is left panning a magnified page. These apps are used on
+ * phones, so form controls are a full 16px there and only take the tighter type on wider,
+ * pointer-precise screens where the zoom behaviour does not apply.
+ */
+@media (max-width: 640px) {
+  .input,
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

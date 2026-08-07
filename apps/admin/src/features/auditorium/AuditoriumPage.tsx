@@ -234,10 +234,10 @@ function EditLayoutDialog({ initial, onClose }: { initial: RowEdit[]; onClose: (
       title="Edit auditorium layout"
       footer={
         <>
-          <Button variant="secondary" size="sm" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button size="sm" loading={save.isPending} onClick={() => save.mutate()}>
+          <Button loading={save.isPending} onClick={() => save.mutate()}>
             Save · {total} seats
           </Button>
         </>

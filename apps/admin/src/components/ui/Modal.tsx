@@ -26,12 +26,28 @@ export function Modal({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
+  // Lock the page behind the dialog. Without this the body keeps its own scroll — and on a
+  // phone, where the page is often wider than the viewport, that shows up as the dialog
+  // sliding left and right under your thumb while you try to type in it.
+  useEffect(() => {
+    if (!open) return;
+    const { overflow, touchAction } = document.body.style;
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    return () => {
+      document.body.style.overflow = overflow;
+      document.body.style.touchAction = touchAction;
+    };
+  }, [open]);
+
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overscroll-contain p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} aria-hidden />
       <div
-        className={`card relative z-10 flex max-h-[90vh] w-full ${modalWidths[size]} flex-col p-6 shadow-lift`}
+        // `max-h-[100dvh]` minus the wrapper padding: on mobile the browser chrome makes vh
+        // taller than what you can actually see, so a 90vh dialog runs off the bottom.
+        className={`card relative z-10 flex max-h-[calc(100dvh-2rem)] w-full ${modalWidths[size]} flex-col p-5 shadow-lift sm:p-6`}
       >
         <div className="mb-5 flex items-center justify-between gap-4">
           <h2 className="text-lg font-semibold tracking-tight text-fg">{title}</h2>

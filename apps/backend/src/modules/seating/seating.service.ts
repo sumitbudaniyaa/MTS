@@ -118,7 +118,13 @@ export async function getMovieSeatMap(
   movieId: string,
   userId?: string,
   rank: RankType | null = null,
-): Promise<{ rows: string[]; seats: SeatView[]; openToAll: boolean }> {
+): Promise<{
+  rows: string[];
+  seats: SeatView[];
+  openToAll: boolean;
+  /** Absent for an anonymous viewer — there is no personal limit to report. */
+  allowance?: { familySize: number; booked: number; canSelect: number };
+}> {
   const movie = await MovieModel.findById(movieId).select('openToAll');
   const openToAll = Boolean(movie?.openToAll);
   const seats = await MovieSeatModel.find({ movie: movieId }).sort('row number');
@@ -136,7 +142,24 @@ export async function getMovieSeatMap(
       mine,
     };
   });
-  return { rows, seats: view, openToAll };
+  // Ship the personal cap with the map so the picker can show "2/4 selected" and stop the
+  // selection at the limit, instead of letting someone pick freely and fail on Confirm.
+  let allowance: { familySize: number; booked: number; canSelect: number } | undefined;
+  if (userId) {
+    const user = await UserModel.findById(userId).select('familySize');
+    if (user) {
+      const a = await seatAllowance(userId, movieId, user.familySize);
+      // `canSelect` counts current holds as selectable, because they ARE the selection the
+      // picker is about to display — only issued tickets are permanently spent.
+      allowance = {
+        familySize: a.familySize,
+        booked: a.booked,
+        canSelect: Math.max(0, a.familySize - a.booked),
+      };
+    }
+  }
+
+  return { rows, seats: view, openToAll, allowance };
 }
 
 // ---- Admin: full movie booking detail -------------------------------------
@@ -245,6 +268,43 @@ async function assertBookableMovie(movieId: string) {
   return movie;
 }
 
+export interface SeatAllowance {
+  /** Tickets this person may hold for one movie, themselves included. */
+  familySize: number;
+  /** Tickets already issued to them for this movie (BOOKED or CHECKED_IN). */
+  booked: number;
+  /** Seats they are holding right now — the live selection. */
+  heldLabels: string[];
+  /** How many more seats they may still take. */
+  remaining: number;
+}
+
+/**
+ * What one person may still take for one movie.
+ *
+ * Seats already *held* count against the limit as much as tickets already *booked* — a hold is
+ * a seat nobody else can have, so leaving them out would let someone tie up the auditorium a
+ * hold at a time. Returned to the seat map so the picker can stop the selection at the cap
+ * rather than letting it fail on Confirm.
+ */
+export async function seatAllowance(
+  userId: string,
+  movieId: string,
+  familySize: number,
+): Promise<SeatAllowance> {
+  const [booked, heldSeats] = await Promise.all([
+    heldTicketCount(userId, movieId),
+    MovieSeatModel.find({ movie: movieId, heldBy: userId, status: SeatStatus.HELD }).select('label'),
+  ]);
+  const heldLabels = heldSeats.map((s) => s.label);
+  return {
+    familySize,
+    booked,
+    heldLabels,
+    remaining: Math.max(0, familySize - booked - heldLabels.length),
+  };
+}
+
 async function userRank(userId: string): Promise<RankType | null> {
   const user = await UserModel.findById(userId).select('rank');
   return (user?.rank as RankType) ?? null;
@@ -263,7 +323,23 @@ export async function holdSeats(
 ): Promise<{ held: string[] }> {
   const movie = await assertBookableMovie(movieId);
   const openToAll = Boolean(movie.openToAll);
-  const rank = await userRank(userId);
+  const user = await UserModel.findById(userId).select('rank familySize');
+  if (!user) throw ApiError.unauthorized();
+  const rank = (user.rank as RankType) ?? null;
+
+  // Enforce the family limit at HOLD time, not just at book time. Holding was previously
+  // unlimited: a user could tie up any number of seats for the hold window and only discover
+  // the cap when they pressed Confirm — meanwhile nobody else could take those seats.
+  const allowance = await seatAllowance(userId, movieId, user.familySize);
+  const mineAlready = new Set(allowance.heldLabels);
+  const wanted = labels.filter((l) => !mineAlready.has(l)).length;
+  if (wanted > allowance.remaining) {
+    throw ApiError.badRequest(
+      `You may hold at most ${user.familySize} seat(s) for this movie`,
+      { familySize: user.familySize, booked: allowance.booked, remaining: allowance.remaining },
+    );
+  }
+
   const expires = new Date(Date.now() + settings().seatHoldSeconds * 1_000);
   const held: string[] = [];
 

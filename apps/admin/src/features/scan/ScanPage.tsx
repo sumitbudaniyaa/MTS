@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { api, apiErrorMessage } from '@/lib/api';
 import { QrScanner } from './QrScanner';
 import { useOnline } from './useOnline';
@@ -27,11 +29,11 @@ function labelFor(message: string): string {
 }
 
 /**
- * Door check-in from the admin console. Same verification endpoint the scanner app uses — an
- * operational admin running a show can work the door themselves without a separate account.
- * The server records the check-in against their Admin id, so it stays attributable.
+ * Door check-in — standalone full-screen page so the camera gets the full viewport.
+ * Reached from the scan button in the OpsLayout header; has its own back button.
  */
 export function ScanPage() {
+  const navigate = useNavigate();
   const online = useOnline();
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [manual, setManual] = useState('');
@@ -67,16 +69,24 @@ export function ScanPage() {
   }
 
   return (
-    <div className="mx-auto max-w-md">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-fg">Scan tickets</h1>
-          <p className="text-xs text-muted">Point the camera at a ticket QR</p>
-        </div>
+    <div className="min-h-dvh bg-bg">
+      {/* Standalone header with back button */}
+      <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border bg-surface/90 px-4 backdrop-blur">
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          aria-label="Go back"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-muted active:scale-95"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <span className="flex-1 text-sm font-semibold text-fg">Scan tickets</span>
         <span className={`text-xs ${online ? 'text-success' : 'text-warning'}`}>
           {online ? 'Online' : 'Offline'}
         </span>
-      </div>
+      </header>
+
+      <div className="mx-auto max-w-md px-4 py-5">
 
       {!online ? (
         <div className="flex h-64 items-center justify-center rounded-2xl border border-border text-sm text-muted">
@@ -136,6 +146,7 @@ export function ScanPage() {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
