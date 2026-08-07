@@ -143,7 +143,7 @@ function AuditoriumView({ rows }: { rows: RowEdit[] }) {
 }
 
 export function AuditoriumPage() {
-  const { canManageMovies } = useRole();
+  const { canManageAuditorium } = useRole();
   const [editing, setEditing] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -160,9 +160,9 @@ export function AuditoriumPage() {
     <div>
       <PageHeader
         title="Auditorium"
-        subtitle={`Seating layout · ${totalSeats} seats${canManageMovies ? '' : ' (read-only)'}`}
+        subtitle={`Seating layout · ${totalSeats} seats${canManageAuditorium ? '' : ' (read-only)'}`}
         action={
-          canManageMovies ? (
+          canManageAuditorium ? (
             <Button size="sm" onClick={() => setEditing(true)}>
               <Pencil className="h-3.5 w-3.5" /> Edit layout
             </Button>
@@ -176,7 +176,7 @@ export function AuditoriumPage() {
           <EmptyState
             title="No layout yet"
             hint={
-              canManageMovies
+              canManageAuditorium
                 ? 'Click “Edit layout” to design the auditorium.'
                 : 'No layout has been designed yet.'
             }

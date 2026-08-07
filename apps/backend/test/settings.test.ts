@@ -47,13 +47,13 @@ describe('runtime settings', () => {
     await loadSettings(); // recreate the singleton wiped by the shared afterEach
   });
 
-  it('lets an operational admin change timings, and applies them immediately', async () => {
+  it('lets a super admin change timings, and applies them immediately', async () => {
     const { url, close } = await startApp();
     try {
-      const { admin } = await tokens(url);
+      const { superAdmin } = await tokens(url);
 
       const before = await fetch(`${url}/api/v1/settings`, {
-        headers: { authorization: `Bearer ${admin}` },
+        headers: { authorization: `Bearer ${superAdmin}` },
       });
       expect(before.status).toBe(200);
 
@@ -61,7 +61,7 @@ describe('runtime settings', () => {
       // insert-time seed and fail with a Mongo path conflict.
       const res = await fetch(`${url}/api/v1/settings`, {
         method: 'PATCH',
-        headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' },
+        headers: { authorization: `Bearer ${superAdmin}`, 'content-type': 'application/json' },
         body: JSON.stringify({ noShowGraceMinutes: 25 }),
       });
       expect(res.status).toBe(200);
@@ -78,7 +78,7 @@ describe('runtime settings', () => {
   it('changes the booking window that isMovieVisible enforces', async () => {
     const { url, close } = await startApp();
     try {
-      const { admin } = await tokens(url);
+      const { superAdmin } = await tokens(url);
       // Starts in 90 minutes: outside the default 60-minute lead.
       const movie = await MovieModel.create({
         title: 'Lead',
@@ -90,7 +90,7 @@ describe('runtime settings', () => {
 
       await fetch(`${url}/api/v1/settings`, {
         method: 'PATCH',
-        headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' },
+        headers: { authorization: `Bearer ${superAdmin}`, 'content-type': 'application/json' },
         body: JSON.stringify({ visibilityLeadMinutes: 120 }),
       });
 
@@ -101,21 +101,23 @@ describe('runtime settings', () => {
     }
   });
 
-  it('is read-only for a super admin and rejects out-of-range values', async () => {
+  it('is read-only for an operational admin and rejects out-of-range values', async () => {
     const { url, close } = await startApp();
     try {
       const { admin, superAdmin } = await tokens(url);
 
-      // Super admins may look…
+      // The operational admin may look…
       const read = await fetch(`${url}/api/v1/settings`, {
-        headers: { authorization: `Bearer ${superAdmin}` },
+        headers: { authorization: `Bearer ${admin}` },
       });
       expect(read.status).toBe(200);
 
-      // …but not touch: these are operational knobs, like movies and the auditorium.
+      // …but not touch. Timings moved to SUPER_ADMIN alongside the auditorium: they are
+      // set-once venue policy, and the operational admin's console is now a phone-sized
+      // movies/scanners/scan tool with no room for them.
       const write = await fetch(`${url}/api/v1/settings`, {
         method: 'PATCH',
-        headers: { authorization: `Bearer ${superAdmin}`, 'content-type': 'application/json' },
+        headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' },
         body: JSON.stringify({ noShowGraceMinutes: 30 }),
       });
       expect(write.status).toBe(403);
@@ -123,7 +125,7 @@ describe('runtime settings', () => {
       // Bounds are enforced server-side regardless of what the form allows.
       const bad = await fetch(`${url}/api/v1/settings`, {
         method: 'PATCH',
-        headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' },
+        headers: { authorization: `Bearer ${superAdmin}`, 'content-type': 'application/json' },
         body: JSON.stringify({ seatHoldSeconds: 0 }),
       });
       expect(bad.status).toBe(400);

@@ -90,11 +90,18 @@ export function SeatPickerPage() {
       // Drop any of my selected seats that got reclaimed (no longer HELD).
       setSelected((sel) => sel.filter((l) => !p.seats.some((s) => s.label === l && s.status !== 'HELD')));
     });
+    // An admin opened the movie to all ranks (or restored the gating). Every seat's `bookable`
+    // flag was computed server-side under the previous rule, so the whole map has to be re-read
+    // — otherwise seats that just unlocked stay greyed out until the page is reloaded.
+    socket.on('movie:rules', (p: { movieId: string }) => {
+      if (p.movieId === movieId) void refetch();
+    });
     return () => {
       socket.emit('movie:leave', movieId);
       socket.disconnect();
     };
-  }, [movieId, user]);
+    // `refetch` is stable across renders, so listing it can't churn the socket connection.
+  }, [movieId, user, refetch]);
 
   // ---- hold countdown ----
   useEffect(() => {

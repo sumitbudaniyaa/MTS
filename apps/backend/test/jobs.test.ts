@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  AdminModel,
   BookingModel,
   MovieModel,
   ScannerModel,
@@ -373,5 +374,51 @@ describe('movie delete guard', () => {
     await MovieModel.updateOne({ _id: movie._id }, { $set: { seatsBooked: 0 } });
     await deleteMovie(movie.id);
     expect(await MovieModel.findById(movie._id)).toBeNull();
+  });
+});
+
+describe('admin ticket verification', () => {
+  it('lets an operational ADMIN check a ticket in, recorded as an Admin not a Scanner', async () => {
+    const unit = await UnitModel.create({ name: 'ADMSCAN', code: 'ADS' });
+    const user = await UserModel.create({
+      mobile: '9000000021',
+      passwordHash: await hashPassword('Pass123'),
+      role: Roles.USER,
+      unit: unit._id,
+    });
+    const admin = await AdminModel.create({
+      mobile: '9000000022',
+      passwordHash: await hashPassword('Pass123'),
+      role: Roles.ADMIN,
+      name: 'Ops Admin',
+    });
+    const movie = await MovieModel.create({
+      title: 'AdminScan',
+      showDate: new Date(),
+      startTime: new Date(),
+      totalSeats: 1,
+      seatsBooked: 1,
+      status: MovieStatus.OPEN,
+    });
+    const code = generateTicketCode();
+    await BookingModel.create({
+      user: user._id,
+      movie: movie._id,
+      unit: unit._id,
+      source: BookingSource.UNIT_QUOTA,
+      quantity: 1,
+      idempotencyKey: 'k-admin-scan',
+      tickets: [{ code, status: TicketStatus.BOOKED }],
+    });
+
+    const result = await verifyTicket(code, admin.id, undefined, 'Admin');
+    expect(result.status).toBe(TicketStatus.CHECKED_IN);
+
+    // `checkedInBy` is polymorphic: without the companion model field it would be read as a
+    // Scanner id, populate to null, and lose who actually checked the ticket in.
+    const after = await BookingModel.findOne({ movie: movie._id });
+    const ticket = after!.tickets[0]!;
+    expect(String(ticket.checkedInBy)).toBe(admin.id);
+    expect(ticket.checkedInByModel).toBe('Admin');
   });
 });

@@ -6,7 +6,7 @@ import { Plus, Trash2, Search } from 'lucide-react';
 import { api, apiErrorMessage } from '@/lib/api';
 import { mobileField } from '@/lib/mobile';
 import type { Paginated, Personnel } from '@/types';
-import { PageHeader, LoadingState, EmptyState, ErrorState } from '@/components/ui/Misc';
+import { PageHeader, Card, LoadingState, EmptyState, ErrorState } from '@/components/ui/Misc';
 import { Button } from '@/components/ui/Button';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { Input } from '@/components/ui/Input';
@@ -75,6 +75,24 @@ export function ScannersPage() {
 
       {data && data.items.length > 0 && (
         <>
+          {/* Phone layout — the operational admin manages door staff from the venue. */}
+          <div className="space-y-2.5 md:hidden">
+            {data.items.map((p) => (
+              <Card key={p.id} className="flex items-center justify-between gap-3 p-4">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-fg">{p.mobile}</p>
+                  <p className="text-xs text-muted">{p.role}</p>
+                </div>
+                <Tooltip label="Remove">
+                  <Button size="sm" variant="ghost" onClick={() => setDeleting(p)}>
+                    <Trash2 className="h-4 w-4 text-danger" />
+                  </Button>
+                </Tooltip>
+              </Card>
+            ))}
+          </div>
+
+          <div className="hidden md:block">
           <Table
             head={
               <tr>
@@ -98,6 +116,7 @@ export function ScannersPage() {
               </tr>
             ))}
           </Table>
+          </div>
           <Pagination page={data.page} totalPages={data.totalPages} total={data.total} onPage={setPage} />
         </>
       )}
@@ -163,7 +182,7 @@ function ScannerFormModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
         </>
       }
     >
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Input
           label="Mobile"
           error={errors.mobile?.message}

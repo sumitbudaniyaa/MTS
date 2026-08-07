@@ -11,11 +11,12 @@ settingsRouter.use(authenticate);
 
 // Both admin tiers can see the current timings…
 settingsRouter.get('/', authorize(Roles.ADMIN, Roles.SUPER_ADMIN), ctrl.getSettingsController);
-// …but these are operational knobs, so only an operational ADMIN may change them — the same
-// separation of duties applied to movies and the auditorium.
+// …but **SUPER_ADMIN** changes them. These are set-once-and-forget policy knobs, and the
+// operational ADMIN's console is now a phone-sized movies/scanners/scan tool with no room —
+// and no need — for them. Kept with the auditorium so venue policy lives in one tier.
 settingsRouter.patch(
   '/',
-  authorize(Roles.ADMIN),
+  authorize(Roles.SUPER_ADMIN),
   validate({ body: updateSettingsSchema }),
   ctrl.updateSettingsController,
 );

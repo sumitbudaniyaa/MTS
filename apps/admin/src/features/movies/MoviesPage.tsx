@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { Plus, Trash2, Pencil, Eye, LayoutGrid } from 'lucide-react';
 import { api, apiErrorMessage } from '@/lib/api';
 import type { Movie, MovieStatus, Paginated } from '@/types';
-import { PageHeader, Badge, LoadingState, EmptyState, ErrorState } from '@/components/ui/Misc';
+import { PageHeader, Badge, Card, LoadingState, EmptyState, ErrorState } from '@/components/ui/Misc';
 import { Button } from '@/components/ui/Button';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { Input } from '@/components/ui/Input';
@@ -90,6 +90,74 @@ export function MoviesPage() {
     onError: (e) => toast.error(apiErrorMessage(e)),
   });
 
+  /**
+   * Row actions, shared by the desktop table and the mobile card list so the visibility rules
+   * (delete only while unbooked, edit/allocate only before booking opens, open-to-all only
+   * while the show is live) live in exactly one place.
+   */
+  const actionsFor = (m: Movie) => (
+    <div className="flex justify-end gap-1">
+      <Tooltip label="View layout, booked seats & who booked them">
+        <Button size="sm" variant="ghost" onClick={() => setViewing(m)}>
+          <Eye className="h-3.5 w-3.5" />
+        </Button>
+      </Tooltip>
+      {canManageMovies && (
+        <>
+          {/* Open to all stays available right through the screening — it is how
+              an admin frees up a half-empty show mid-run — but means nothing once
+              the show is over. */}
+          {!isFinished(m) && (
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={openAll.isPending && openAll.variables?.id === m.id}
+              onClick={() => openAll.mutate({ id: m.id, open: !m.openToAll })}
+              title="Allow any rank to book this movie"
+            >
+              {m.openToAll ? 'Restrict ranks' : 'Open to all'}
+            </Button>
+          )}
+          {/* Allocation and details are frozen the moment booking opens: people
+              are choosing seats against these numbers from that point on. Hidden
+              rather than disabled — no admin action brings them back. */}
+          {!bookingHasOpened(m) && (
+            <>
+              <Tooltip label="Allocate seats across units">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setAllocating(m)}
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                </Button>
+              </Tooltip>
+              <Tooltip label="Edit">
+                <Button size="sm" variant="ghost" onClick={() => setEditing(m)}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              </Tooltip>
+            </>
+          )}
+          {/* Deletable for exactly as long as nobody holds a ticket. The first
+              booking removes the button for good. */}
+          {m.seatsBooked === 0 && (
+            <Tooltip label="Delete">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setDeleting(m)}
+              >
+                <Trash2 className="h-3.5 w-3.5 text-danger" />
+              </Button>
+            </Tooltip>
+          )}
+        </>
+      )}
+    </div>
+  );
+
+
   return (
     <div>
       <PageHeader
@@ -110,6 +178,32 @@ export function MoviesPage() {
 
       {data && data.items.length > 0 && (
         <>
+          {/* Phones get cards. A five-column table on a handset either scrolls sideways or
+              crushes every column, and the operational admin works from a phone at the venue. */}
+          <div className="space-y-2.5 md:hidden">
+            {data.items.map((m) => (
+              <Card key={m.id} className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="truncate font-medium text-fg">{m.title}</h2>
+                    <p className="mt-0.5 text-xs text-muted">{fmt(m.startTime)}</p>
+                  </div>
+                  <span className="shrink-0 text-xs tabular-nums text-muted">
+                    {m.seatsBooked}/{m.totalSeats}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  <Badge tone={statusTone[m.status]}>{m.status}</Badge>
+                  {m.openToAll && <Badge tone="success">All ranks</Badge>}
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-1 border-t border-border pt-3">
+                  {actionsFor(m)}
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          <div className="hidden md:block">
           <Table
             head={
               <tr>
@@ -134,70 +228,11 @@ export function MoviesPage() {
                     {m.openToAll && <Badge tone="success">All ranks</Badge>}
                   </div>
                 </Td>
-                <Td className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <Tooltip label="View layout, booked seats & who booked them">
-                      <Button size="sm" variant="ghost" onClick={() => setViewing(m)}>
-                        <Eye className="h-3.5 w-3.5" />
-                      </Button>
-                    </Tooltip>
-                    {canManageMovies && (
-                      <>
-                        {/* Open to all stays available right through the screening — it is how
-                            an admin frees up a half-empty show mid-run — but means nothing once
-                            the show is over. */}
-                        {!isFinished(m) && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            loading={openAll.isPending && openAll.variables?.id === m.id}
-                            onClick={() => openAll.mutate({ id: m.id, open: !m.openToAll })}
-                            title="Allow any rank to book this movie"
-                          >
-                            {m.openToAll ? 'Restrict ranks' : 'Open to all'}
-                          </Button>
-                        )}
-                        {/* Allocation and details are frozen the moment booking opens: people
-                            are choosing seats against these numbers from that point on. Hidden
-                            rather than disabled — no admin action brings them back. */}
-                        {!bookingHasOpened(m) && (
-                          <>
-                            <Tooltip label="Allocate seats across units">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => setAllocating(m)}
-                              >
-                                <LayoutGrid className="h-3.5 w-3.5" />
-                              </Button>
-                            </Tooltip>
-                            <Tooltip label="Edit">
-                              <Button size="sm" variant="ghost" onClick={() => setEditing(m)}>
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                            </Tooltip>
-                          </>
-                        )}
-                        {/* Deletable for exactly as long as nobody holds a ticket. The first
-                            booking removes the button for good. */}
-                        {m.seatsBooked === 0 && (
-                          <Tooltip label="Delete">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setDeleting(m)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5 text-danger" />
-                            </Button>
-                          </Tooltip>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </Td>
+                <Td className="text-right">{actionsFor(m)}</Td>
               </tr>
             ))}
           </Table>
+          </div>
           <Pagination page={data.page} totalPages={data.totalPages} total={data.total} onPage={setPage} />
         </>
       )}

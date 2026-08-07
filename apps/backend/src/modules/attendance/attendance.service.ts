@@ -21,6 +21,8 @@ export async function verifyTicket(
   code: string,
   scannerId: string,
   req?: Request,
+  /** Which collection `scannerId` lives in — door staff scan, but an ADMIN may scan too. */
+  actorModel: 'Scanner' | 'Admin' = 'Scanner',
 ): Promise<VerifyResult> {
   const now = new Date();
 
@@ -32,6 +34,7 @@ export async function verifyTicket(
         'tickets.$.checkedIn': true,
         'tickets.$.checkedInAt': now,
         'tickets.$.checkedInBy': scannerId,
+        'tickets.$.checkedInByModel': actorModel,
       },
     },
     { new: true },

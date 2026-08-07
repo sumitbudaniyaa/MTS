@@ -10,10 +10,11 @@ export const attendanceRouter = Router();
 
 attendanceRouter.use(authenticate);
 
-// QR verification — SCANNER only, rate-limited for door throughput.
+// QR verification — door staff, plus the operational ADMIN, who runs the show and scans from
+// their own console. Rate-limited for door throughput.
 attendanceRouter.post(
   '/verify',
-  authorize(Roles.SCANNER),
+  authorize(Roles.SCANNER, Roles.ADMIN),
   scannerLimiter,
   validate({ body: verifySchema }),
   ctrl.verifyTicket,

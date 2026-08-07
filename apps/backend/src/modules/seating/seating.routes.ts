@@ -17,18 +17,21 @@ export const seatingRouter = Router();
 seatingRouter.use(authenticate);
 
 // ---- Auditorium layout ----
-// Reading the layout is open to both admin tiers (super admin gets a read-only view);
-// saving/managing it is operational ADMIN only.
+// Both admin tiers read it; **SUPER_ADMIN owns editing it**. The operational ADMIN runs shows
+// from a phone (movies / scanners / door scanning) and no longer carries the venue designer —
+// a rarely-touched desk job that does not belong on a handset.
 seatingRouter.get('/auditorium', authorize(Roles.ADMIN, Roles.SUPER_ADMIN), ctrl.getAuditorium);
 seatingRouter.put(
   '/auditorium',
-  authorize(Roles.ADMIN),
+  authorize(Roles.SUPER_ADMIN),
   validate({ body: saveAuditoriumSchema }),
   ctrl.saveAuditorium,
 );
+// Regenerating a movie's seats follows from the layout, but ADMIN creates movies (which
+// generates seats implicitly), so both tiers may trigger an explicit rebuild.
 seatingRouter.post(
   '/movies/:movieId/generate',
-  authorize(Roles.ADMIN),
+  authorize(Roles.ADMIN, Roles.SUPER_ADMIN),
   validate({ params: movieIdParamSchema }),
   ctrl.generateSeats,
 );

@@ -98,3 +98,67 @@ describe('seat engine (epic)', () => {
     expect(seat?.status).toBe(SeatStatus.FREE);
   });
 });
+
+describe('open to all', () => {
+  /** Auditorium whose one row is JAWAN-only, plus an open-to-all movie on it. */
+  async function openSetup() {
+    await AuditoriumModel.create({
+      name: 'RankLocked',
+      rows: [
+        {
+          label: 'A',
+          seats: [
+            { number: 1, allowedRanks: [Rank.JAWAN] },
+            { number: 2, allowedRanks: [Rank.JAWAN] },
+          ],
+        },
+      ],
+    });
+    const signals = await UnitModel.create({ name: 'Signals' });
+    const armoured = await UnitModel.create({ name: 'Armoured' });
+    const startTime = new Date(Date.now() + 30 * 60_000);
+    const movie = await MovieModel.create({
+      title: 'Free For All',
+      showDate: startTime,
+      startTime,
+      totalSeats: 2,
+      status: MovieStatus.SCHEDULED,
+      openToAll: true,
+    });
+    await seating.generateMovieSeats(movie.id);
+    return { signals, armoured, movie };
+  }
+
+  it('lets a JCO take a JAWAN-only seat, from any unit', async () => {
+    const { armoured, movie } = await openSetup();
+    // Different unit from anyone allocated the movie, and the wrong rank for the seat.
+    const jco = await makeUser('9000000031', armoured._id, Rank.JCO);
+    const res = await seating.holdSeats(jco.id, movie.id, ['A1']);
+    expect(res.held).toEqual(['A1']);
+
+    const booked = await seating.bookSeats({
+      userId: jco.id,
+      movieId: movie.id,
+      labels: ['A1'],
+      idempotencyKey: 'open-all-1',
+    });
+    expect(booked.length).toBe(1);
+  });
+
+  it('shows the seat as bookable on the map for that same JCO', async () => {
+    const { armoured, movie } = await openSetup();
+    const jco = await makeUser('9000000032', armoured._id, Rank.JCO);
+    const map = await seating.getMovieSeatMap(movie.id, jco.id, Rank.JCO);
+    expect(map.openToAll).toBe(true);
+    expect(map.seats.every((s) => s.bookable)).toBe(true);
+  });
+
+  it('still blocks the wrong rank when the movie is NOT open to all', async () => {
+    const { armoured, movie } = await openSetup();
+    await MovieModel.updateOne({ _id: movie._id }, { $set: { openToAll: false } });
+    const jco = await makeUser('9000000033', armoured._id, Rank.JCO);
+    await expect(seating.holdSeats(jco.id, movie.id, ['A1'])).rejects.toMatchObject({
+      statusCode: 403,
+    });
+  });
+});

@@ -18,7 +18,15 @@ const ticketSchema = new Schema(
     },
     checkedIn: { type: Boolean, default: false },
     checkedInAt: { type: Date, default: null },
-    checkedInBy: { type: Schema.Types.ObjectId, ref: 'Scanner', default: null }, // scanner
+    // Who scanned it. Polymorphic (like `auditlogs`) because door staff are Scanner accounts
+    // but an operational ADMIN can also scan from their own console — a hard `ref: 'Scanner'`
+    // would store an Admin id that populates to null, silently losing who checked the ticket in.
+    checkedInBy: {
+      type: Schema.Types.ObjectId,
+      refPath: 'tickets.checkedInByModel',
+      default: null,
+    },
+    checkedInByModel: { type: String, enum: ['Scanner', 'Admin'], default: null },
     cancelledAt: { type: Date, default: null },
     expiredAt: { type: Date, default: null },
   },

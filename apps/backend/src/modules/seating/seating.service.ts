@@ -15,7 +15,7 @@ import {
 import { ApiError } from '../../utils/apiError.js';
 import { generateTicketCode } from '../../utils/ids.js';
 import { recordAudit } from '../audit/audit.service.js';
-import { broadcastMovie, broadcastSeats } from '../../realtime/gateway.js';
+import { broadcastMovie, broadcastMovieRules, broadcastSeats } from '../../realtime/gateway.js';
 import { AuditAction, MovieStatus, SeatStatus, TicketStatus, type RankType } from '../../constants/enums.js';
 import { Roles } from '../../types/index.js';
 import { settings } from '../../config/settings.js';
@@ -86,6 +86,9 @@ export async function setMovieOpenToAll(movieId: string, open: boolean): Promise
   movie.openToAll = open;
   await movie.save();
   broadcastMovie(movie.id, { openToAll: movie.openToAll });
+  // Anyone sitting on the seat map right now holds `bookable` flags computed under the old
+  // rule — push the change so seats unlock (or re-lock) without a reload.
+  broadcastMovieRules(movie.id, movie.openToAll);
   return movie.openToAll;
 }
 

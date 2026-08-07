@@ -72,7 +72,7 @@ src/
 | `movieseats`      | Per-movie seat inventory | `movie`, `row`, `number`, `label`, `allowedRanks[]`, `status` (FREE\|HELD\|BOOKED), `heldBy`, `holdExpiresAt`, `bookedBy`, `booking`, `ticketCode` |
 | `seatallocations` | Legacy per-unit quota (superseded by seats; endpoints retained) | `movie`, `unit`, `allocated`, `booked`, `released` |
 | `bookings`        | A booking = N tickets for one user/movie | `user`, `movie`, `quantity`, `source`, `idempotencyKey`, `tickets[]` |
-| `tickets`         | One seat = one QR (embedded in booking) | `code`, `seatLabel`, `status`, `checkedIn`, `checkedInAt`, `checkedInBy` (→Scanner) |
+| `tickets`         | One seat = one QR (embedded in booking) | `code`, `seatLabel`, `status`, `checkedIn`, `checkedInAt`, `checkedInBy` + `checkedInByModel` (refPath→Scanner\|Admin) |
 | `auditlogs`       | Append-only audit trail | `user` (refPath→Admin/Scanner/User), `userModel`, `action`, `ip`, `metadata`, `createdAt` |
 | `refreshtokens`   | Rotating refresh tokens | `user`, `role`, `tokenHash`, `family`, `expiresAt`, `revokedAt`, `replacedBy` |
 
@@ -94,12 +94,20 @@ Personnel **ranks** (OFFICER/JCO/JAWAN) gate seat booking — see §3.10.
 `SUPER_ADMIN` · `ADMIN` · `USER` · `SCANNER`. Every route is wrapped by `authenticate` then
 `authorize(...roles)`. No route is public except `POST /auth/login` and `POST /auth/refresh`.
 
-**Two admin tiers (separation of duties)** — both live in the `admins` collection:
-- **SUPER_ADMIN**: units, USER personnel and admin accounts (create/edit/delete). Read-only on
-  movies & auditorium. Seeded by `npm run seed:admin`.
-- **ADMIN** (operational, created by a super admin): movies, auditorium, seat allocation and
-  scanner operators. Read-only on units & USER personnel; cannot manage admin accounts.
-- **Both** see reports, audit, attendance and the dashboard.
+**Two admin tiers (separation of duties)** — both live in the `admins` collection, and they
+get **two different apps**, not one app with buttons hidden (see §4.2):
+- **SUPER_ADMIN** — the desk work: units, USER personnel and admin accounts, the **auditorium
+  layout** and the **operational timings**, plus reports and audit. Read-only on movies.
+  Seeded by `npm run seed:admin`.
+- **ADMIN** (operational, created by a super admin) — runs shows, from a phone at the venue:
+  movies, scanner operators and **door check-in**. Read-only on units & USER personnel; cannot
+  manage admin accounts, the auditorium or the timings.
+
+> Venue *shape* (auditorium, timings) sits with SUPER_ADMIN rather than the operational admin:
+> it is set-once policy, and the operational console is a handset. This was the reverse before
+> — moving it kept the operational UI to three things without leaving the layout uneditable.
+- **Reports, audit and the dashboard are SUPER_ADMIN-only.** The operational console is
+  deliberately three things; attendance is visible through the door-scan result itself.
 - Personnel writes are enforced by *target* role in the controller: USER personnel are
   SUPER_ADMIN-only, while SCANNER operators may be managed by either tier. The admin frontend
   (`lib/role.ts` → `useRole()`) hides controls to match, but the server is the source of truth.
@@ -283,6 +291,13 @@ Two rules keep this honest:
   default 120) → `FREE`, broadcast live (see §3.10).
 Jobs are idempotent (safe to re-run); a missed tick reconciles on the next run.
 
+### 3.9.1 Door check-in actors
+`/attendance/verify` is open to **SCANNER and ADMIN**: an operational admin running a show can
+work the door themselves without a second account. A ticket therefore records **who** scanned
+it polymorphically — `checkedInBy` + `checkedInByModel` (`Scanner` | `Admin`), the same
+`refPath` pattern as `auditlogs`. A hard `ref: 'Scanner'` would have stored an Admin id that
+populates to `null`, silently losing the attribution.
+
 ### 3.10 Seat structure, rank gating & real-time (epic)
 - **Auditorium layout** (singleton `auditoria` doc): the admin page **shows** the visual
   layout (screen + rank-tinted seat rows) read-only; an **Edit** button opens a **dialog** to
@@ -313,11 +328,18 @@ Jobs are idempotent (safe to re-run); a missed tick reconciles on the next run.
   hardcoded constant. Combined with seat reclaim, seats that open up mid-show remain claimable
   until the end.
 - **Admin `openToAll`** per movie: when set, any rank may book any seat (free-for-all),
-  ignoring per-seat rank restrictions.
+  ignoring per-seat rank restrictions — a JCO may take a JAWAN seat, and so on. **Unit is not a
+  factor either way**: `movieseats` carries `allowedRanks` only, so seats are never assigned to
+  units and any unit may book any seat, open-to-all or not. (The per-unit `seatallocations`
+  quota is enforced only on the legacy `/bookings` path, which no app calls — it survives as
+  reporting bookkeeping.) Flipping the toggle emits `movie:rules` to the movie's room, because
+  `bookable` is computed server-side under the rule in force when the map was fetched; without
+  it, anyone already on the seat picker keeps seeing stale locked seats until they reload.
 - **Real-time:** a **socket.io** gateway (`realtime/gateway.ts`) attached to the HTTP server,
   with two rooms:
   - `movie:<id>` → `seats:update` on every hold / release / book / expiry, so all viewers of a
     seat map see live availability.
+  - `movie:<id>` → `movie:rules` when an admin flips `openToAll`, so open seat maps re-read.
   - `admin:movies` → `movie:update` carrying `{ movieId, status?, seatsBooked?, poolSeats?,
     openToAll? }`. **Joining is restricted to ADMIN/SUPER_ADMIN**, checked against the role on
     the handshake token (the seat map is fine for any signed-in user; this feed is not). It
@@ -345,6 +367,23 @@ and the admin app use **socket.io-client** (live seat map / live movie list) and
 scanner uses **html5-qrcode**.
 Feature-based folders; reusable `components/`, `hooks/`. Admin is desktop-first (light+dark);
 user + scanner are mobile-first.
+
+### 4.2 Two shells in the admin app
+`App.tsx` picks a shell from the signed-in tier and declares **routes per tier** rather than
+filtering one list — an ADMIN typing `/audit` lands back on their own home instead of reaching
+a page that would 403 anyway.
+- **`OpsLayout`** (ADMIN): mobile-first, a sticky header and a bottom tab bar — Movies,
+  Scanners, Scan. No sidebar, no dashboard. Account actions (change password, sign out) live in
+  a sheet behind the header icon, because those can never be someone else's job even though the
+  Settings *page* moved to SUPER_ADMIN.
+- **`AppLayout`** (SUPER_ADMIN): the existing desktop sidebar console.
+
+Rendering waits for the silent re-auth to resolve before choosing: with the tier still unknown,
+either shell would flash the wrong chrome and the console's catch-all would bounce an ADMIN off
+`/scan` before their role arrived.
+
+Both tiers share the movie and scanner pages, which render **cards below `md` and the table
+above it** — a five-column table on a handset either scrolls sideways or crushes every column.
 
 ### 4.1 Admin design system
 A soft-SaaS look: a light neutral canvas (`--bg`) with white cards floating on it, hairline

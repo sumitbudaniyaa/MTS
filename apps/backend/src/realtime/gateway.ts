@@ -70,6 +70,16 @@ export function broadcastSeats(movieId: string, seats: SeatUpdate[]): void {
   io?.to(`movie:${movieId}`).emit('seats:update', { movieId, seats });
 }
 
+/**
+ * Tell everyone viewing a movie's seat map that its booking *rules* changed — rank gating was
+ * opened up or restored. Their cached `bookable` flags were computed server-side under the old
+ * rule, so a seat that just became available would otherwise stay greyed out until the page was
+ * reloaded, which reads as "open to all didn't work".
+ */
+export function broadcastMovieRules(movieId: string, openToAll: boolean): void {
+  io?.to(`movie:${movieId}`).emit('movie:rules', { movieId, openToAll });
+}
+
 /** Fields of a movie an admin console cares about seeing change without reloading. */
 export interface MovieUpdate {
   status?: string;

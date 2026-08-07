@@ -134,7 +134,7 @@ export function AllocateSeatsModal({
               )}
             </span>
           </div>
-          <div className="grid max-h-[55vh] grid-cols-2 gap-2 overflow-auto">
+          <div className="grid max-h-[55vh] grid-cols-1 gap-2 overflow-auto sm:grid-cols-2">
             {units.items.map((u) => (
               <div
                 key={u.id}

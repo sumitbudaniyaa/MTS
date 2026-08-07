@@ -421,3 +421,45 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       third-party cookie phase-out. Sockets keep pointing at the API host via a new
       `VITE_SOCKET_URL`, since a Vercel rewrite does not carry a WebSocket upgrade; that stays
       cross-site safely because the handshake uses the access token, not a cookie.
+- [x] **The two admin tiers now get two different apps, not one app with buttons hidden.**
+      - **ADMIN (operational)** gets `OpsLayout`: mobile-first, sticky header + bottom tab bar,
+        three tabs — **Movies, Scanners, Scan**. No sidebar, no dashboard. Account actions
+        (change password, sign out) live in a sheet behind the header icon, since those can
+        never be someone else's job even though the Settings page moved away.
+      - **SUPER_ADMIN** keeps the full desktop console and **gains the auditorium layout and the
+        operational timings**. Those moved deliberately: shrinking ADMIN's UI to three things
+        would otherwise have left the layout and timings uneditable by anyone, since SUPER_ADMIN
+        was read-only on both. Venue shape is set-once policy; the operational console is a
+        handset.
+      - `App.tsx` declares **routes per tier** rather than filtering one list, so an ADMIN typing
+        `/audit` lands back on their own home instead of a page that would 403 anyway. Shell
+        choice waits for the silent re-auth: with the tier unknown, either shell would flash the
+        wrong chrome and the console's catch-all would bounce an ADMIN off `/scan`.
+- [x] **Door check-in from the admin console.** `/attendance/verify` now accepts **ADMIN** as
+      well as SCANNER, so an operational admin running a show can work the door without a second
+      account. A ticket's `checkedInBy` became **polymorphic** (`checkedInByModel`: Scanner |
+      Admin, the same `refPath` pattern as `auditlogs`) — a hard `ref: 'Scanner'` would have
+      stored an Admin id that populates to `null`, silently losing who checked the ticket in.
+      The QR component is ported from the scanner app. **36/36 tests** (added: an ADMIN checks a
+      ticket in and it is recorded against the Admin collection).
+- [x] **Movies + Scanners are usable on a phone**: cards below `md`, the existing table above it
+      — a five-column table on a handset either scrolls sideways or crushes every column. Row
+      actions were extracted into one `actionsFor` helper shared by both layouts, so the
+      visibility rules live in exactly one place. Two-column forms (new scanner, seat allocation)
+      stack on small screens.
+- [x] **Verified "open to all" already does everything asked, and locked it in with tests.**
+      The request was: open-to-all should ignore unit *and* rank, and let a JCO take a JAWAN
+      seat. All three were already true and the new tests pass against unchanged logic:
+      `rankAllowed()` short-circuits on `openToAll`, and **unit never gated seat booking at
+      all** — `movieseats` has no unit field, so seats are not assigned to units in the
+      seat-based system. (The per-unit `seatallocations` quota is only enforced on the legacy
+      `/bookings` path, which no app calls; it survives as reporting bookkeeping.) Added three
+      regression tests: a JCO from an unrelated unit holds *and* books a JAWAN-only seat on an
+      open-to-all movie; the same seat reads `bookable` on their seat map; and the rank gate
+      still bites when the movie is not open to all — so the toggle stays meaningful.
+- [x] **Toggling "open to all" now reaches open seat maps live** (`movie:rules` → room
+      `movie:<id>`). `bookable` is computed server-side under whichever rule applied when the
+      map was fetched, so anyone already sitting on the seat picker kept seeing seats greyed out
+      until they reloaded — which looks exactly like "open to all didn't work" and is the most
+      likely way to conclude the feature is broken. The user app re-reads the map on the event.
+      **39/39 tests.**

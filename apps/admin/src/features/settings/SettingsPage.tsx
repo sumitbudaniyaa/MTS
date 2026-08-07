@@ -84,7 +84,7 @@ const TIMING_FIELDS: Array<{
 /** Operational timings. Editable by an operational admin; read-only for a super admin. */
 function TimingsCard() {
   const qc = useQueryClient();
-  const { canManageMovies } = useRole();
+  const { canManageTimings } = useRole();
   const [draft, setDraft] = useState<AppTimings | null>(null);
 
   const { data, isLoading } = useQuery({
@@ -119,9 +119,9 @@ function TimingsCard() {
         <div>
           <h2 className="text-sm font-semibold text-fg">Timings</h2>
           <p className="mt-1 text-xs text-muted">
-            {canManageMovies
+            {canManageTimings
               ? 'Applies to every movie. Changes take effect within a minute.'
-              : 'Managed by an operational admin.'}
+              : 'Managed by a super admin.'}
           </p>
         </div>
       </div>
@@ -138,7 +138,7 @@ function TimingsCard() {
                   min={f.min}
                   max={f.max}
                   className="max-w-[10rem]"
-                  disabled={!canManageMovies}
+                  disabled={!canManageTimings}
                   value={String(current[f.key])}
                   onChange={(e) =>
                     setDraft({ ...current, [f.key]: Number(e.target.value) })
@@ -150,7 +150,7 @@ function TimingsCard() {
             </div>
           ))}
 
-          {canManageMovies && (
+          {canManageTimings && (
             <div className="flex justify-end gap-2 border-t border-border pt-3">
               <Button variant="secondary" size="sm" disabled={!dirty} onClick={() => setDraft(null)}>
                 Reset
