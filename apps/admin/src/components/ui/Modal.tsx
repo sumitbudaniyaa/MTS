@@ -59,7 +59,7 @@ export function Modal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">{children}</div>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden">{children}</div>
         {footer && <div className="mt-6 flex justify-end gap-2 border-t border-border pt-5">{footer}</div>}
       </div>
     </div>

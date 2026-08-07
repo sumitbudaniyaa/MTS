@@ -3,19 +3,19 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Scanner: high-contrast dark theme, large touch targets, camera-friendly. */
+/* Scanner: clean light theme, large touch targets, camera-friendly. */
 @layer base {
   :root {
-    --bg: 9 9 11;
-    --surface: 24 24 27;
-    --surface-2: 39 39 42;
-    --border: 39 39 42;
-    --fg: 244 244 245;
-    --muted: 161 161 170;
-    --accent: 96 165 250;
-    --success: 74 222 128;
-    --warning: 251 191 36;
-    --danger: 248 113 113;
+    --bg: 246 246 247;
+    --surface: 255 255 255;
+    --surface-2: 244 244 245;
+    --border: 233 233 236;
+    --fg: 24 24 27;
+    --muted: 113 113 122;
+    --accent: 79 110 247;
+    --success: 22 163 74;
+    --warning: 217 119 6;
+    --danger: 225 65 65;
   }
 
   html,

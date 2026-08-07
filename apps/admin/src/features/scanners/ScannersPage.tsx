@@ -48,8 +48,8 @@ export function ScannersPage() {
         title="Scanners"
         subtitle="Door-verification operators"
         action={
-          <Button onClick={() => setCreating(true)}>
-            <Plus className="h-4 w-4" /> New scanner
+          <Button size="sm" onClick={() => setCreating(true)}>
+            <Plus className="h-3.5 w-3.5" /> New scanner
           </Button>
         }
       />

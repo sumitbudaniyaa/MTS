@@ -52,7 +52,7 @@ export function ScanPage() {
   async function verify(code: string) {
     const now = Date.now();
     // Dedupe repeat reads of the same QR while it sits in frame.
-    if (busyRef.current) return;
+    if (busyRef.current || outcome) return;
     if (code === lastRef.current.code && now - lastRef.current.at < 3000) return;
     lastRef.current = { code, at: now };
     busyRef.current = true;
@@ -98,8 +98,35 @@ export function ScanPage() {
           <p className="text-xs text-muted">You can still verify by entering the code below.</p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-border bg-black">
+        <div className="relative overflow-hidden rounded-2xl border border-border bg-black min-h-[260px]">
           <QrScanner active onScan={verify} onError={setCamError} />
+          {outcome && (
+            <div
+              className={`absolute inset-0 flex flex-col justify-center p-6 text-center text-white ${
+                outcome.kind === 'ok' ? 'bg-success' : 'bg-danger'
+              }`}
+            >
+              {outcome.kind === 'ok' ? (
+                <div>
+                  <div className="text-3xl font-extrabold">✓ Verified</div>
+                  <div className="mt-2 text-lg font-semibold">{outcome.result.movie.title}</div>
+                  <div className="mt-1 text-sm opacity-90">Holder: {outcome.result.holderMobile}</div>
+                </div>
+              ) : (
+                <div>
+                  <div className="text-3xl font-extrabold">✕ {outcome.label}</div>
+                  <div className="mt-2 text-sm opacity-95">{outcome.message}</div>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setOutcome(null)}
+                className="mt-6 mx-auto rounded-xl bg-white px-4 py-2 text-xs font-bold text-fg uppercase tracking-wider shadow hover:bg-white/90 active:scale-95 transition"
+              >
+                Scan next
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -122,30 +149,6 @@ export function ScanPage() {
           </button>
         </div>
       </div>
-
-      {/* Result — sticky at the bottom of the viewport so it is readable at arm's length. */}
-      {outcome && (
-        <div
-          className={`sticky bottom-4 mt-5 rounded-2xl border px-4 py-3 shadow-soft ${
-            outcome.kind === 'ok'
-              ? 'border-success/30 bg-success/10'
-              : 'border-danger/30 bg-danger/10'
-          }`}
-        >
-          {outcome.kind === 'ok' ? (
-            <>
-              <div className="text-lg font-bold text-success">✓ Verified</div>
-              <div className="mt-0.5 text-sm text-fg">{outcome.result.movie.title}</div>
-              <div className="text-xs text-muted">Holder: {outcome.result.holderMobile}</div>
-            </>
-          ) : (
-            <>
-              <div className="text-lg font-bold text-danger">✕ {outcome.label}</div>
-              <div className="mt-0.5 text-xs text-muted">{outcome.message}</div>
-            </>
-          )}
-        </div>
-      )}
       </div>
     </div>
   );

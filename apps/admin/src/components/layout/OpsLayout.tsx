@@ -41,9 +41,10 @@ export function OpsLayout() {
             onClick={() => navigate('/scan')}
             aria-label="Scan tickets"
             title="Scan tickets"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-fg text-bg active:scale-95"
+            className="flex h-9 items-center gap-1.5 rounded-full bg-fg px-3.5 text-sm font-medium text-bg active:scale-95"
           >
             <ScanLine className="h-4 w-4" />
+            Scan
           </button>
           <button
             type="button"

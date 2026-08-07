@@ -13,6 +13,6 @@ const queryClient = new QueryClient({
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <QueryClientProvider client={queryClient}>
     <App />
-    <Toaster theme="dark" richColors position="top-center" />
+    <Toaster theme="light" richColors position="top-center" />
   </QueryClientProvider>,
 );

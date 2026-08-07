@@ -102,25 +102,21 @@ export function MoviesPage() {
           <Eye className="h-3.5 w-3.5" />
         </Button>
       </Tooltip>
-      {canManageMovies && (
+      {canManageMovies && !isFinished(m) && (
         <>
           {/* Open to all stays available right through the screening — it is how
-              an admin frees up a half-empty show mid-run — but means nothing once
-              the show is over. */}
-          {!isFinished(m) && (
-            <Button
-              size="sm"
-              variant="secondary"
-              loading={openAll.isPending && openAll.variables?.id === m.id}
-              onClick={() => openAll.mutate({ id: m.id, open: !m.openToAll })}
-              title="Allow any rank to book this movie"
-            >
-              {m.openToAll ? 'Restrict ranks' : 'Open to all'}
-            </Button>
-          )}
+              an admin frees up a half-empty show mid-run. */}
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={openAll.isPending && openAll.variables?.id === m.id}
+            onClick={() => openAll.mutate({ id: m.id, open: !m.openToAll })}
+            title="Allow any rank to book this movie"
+          >
+            {m.openToAll ? 'Restrict ranks' : 'Open to all'}
+          </Button>
           {/* Allocation and details are frozen the moment booking opens: people
-              are choosing seats against these numbers from that point on. Hidden
-              rather than disabled — no admin action brings them back. */}
+              are choosing seats against these numbers from that point on. */}
           {!bookingHasOpened(m) && (
             <>
               <Tooltip label="Allocate seats across units">
@@ -139,8 +135,7 @@ export function MoviesPage() {
               </Tooltip>
             </>
           )}
-          {/* Deletable for exactly as long as nobody holds a ticket. The first
-              booking removes the button for good. */}
+          {/* Deletable for exactly as long as nobody holds a ticket. */}
           {m.seatsBooked === 0 && (
             <Tooltip label="Delete">
               <Button
