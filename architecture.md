@@ -245,12 +245,21 @@ still prevent oversell). Use a replica set / Atlas in production for full atomic
 
 ### 3.6.1 Runtime Settings
 
-Three operational timings are editable by an **operational ADMIN** at Admin → Settings →
-Timings, rather than requiring a redeploy: `visibilityLeadMinutes` (when booking opens),
-`noShowGraceMinutes` (check-in grace) and `seatHoldSeconds` (hold while booking). Both admin
-tiers can read them; only ADMIN may write, mirroring the movies/auditorium split. Every change
-is validated against the same bounds in Zod and in the schema, and written to the audit log
-with its before/after values.
+Three operational timings are editable by a **SUPER_ADMIN** at Settings → Timings, rather than
+requiring a redeploy: `visibilityLeadMinutes` (when booking opens), `noShowGraceMinutes`
+(check-in grace) and `seatHoldSeconds` (hold while booking). Both admin tiers can read them;
+only SUPER_ADMIN may write, alongside the auditorium — see §3.4. The card shows the values
+read-only behind an **Edit** dialog, so a keystroke is never a pending change to venue-wide
+policy. Every change is validated against the same bounds in Zod and in the schema, and written
+to the audit log with its before/after values.
+
+**Clients must read these, never hardcode them.** Both once did, and both silently ignored the
+setting: the admin Movies page computed its edit-lock window from a literal 60 minutes (so
+raising the lead moved the server's rule while the page kept offering buttons that then 409'd),
+and the user app's seat picker ran its countdown on a literal 120 s (so raising
+`seatHoldSeconds` cleared the selection early and lowering it left seats looking held after the
+server had freed them). The page now reads `/settings`, and the seat map ships `holdSeconds`
+with every response. Anything new that depends on a timing must do the same.
 
 They live in a single-document `settings` collection and are served by
 `config/settings.ts` as a **synchronous in-memory cache** — `isMovieVisible`, seat holds and

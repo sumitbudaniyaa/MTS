@@ -152,6 +152,13 @@ export async function getMovieSeatMap(
   rows: string[];
   seats: SeatView[];
   openToAll: boolean;
+  /**
+   * How long a hold lasts, from the live admin setting. Sent so the picker's countdown matches
+   * the server instead of assuming 120s — an admin raising `seatHoldSeconds` used to leave the
+   * client clearing the selection early, while lowering it left seats looking held after the
+   * server had already freed them.
+   */
+  holdSeconds: number;
   /** Absent for an anonymous viewer — there is no personal limit to report. */
   allowance?: {
     familySize: number;
@@ -205,7 +212,7 @@ export async function getMovieSeatMap(
     }
   }
 
-  return { rows, seats: view, openToAll, allowance };
+  return { rows, seats: view, openToAll, holdSeconds: settings().seatHoldSeconds, allowance };
 }
 
 // ---- Admin: full movie booking detail -------------------------------------

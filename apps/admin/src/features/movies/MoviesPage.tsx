@@ -31,9 +31,12 @@ function fmt(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-// Booking opens 1h before showtime; movies are locked from edits after that.
-function bookingHasOpened(m: Movie): boolean {
-  return Date.now() >= new Date(m.startTime).getTime() - 60 * 60_000;
+// Booking opens `visibilityLeadMinutes` before showtime, and movies lock for edits from that
+// moment. The lead is admin-configurable, so it has to be read — hardcoding an hour meant
+// changing it in Settings moved the server's rule while this page carried on locking at 60
+// minutes, so Edit looked available and then 409'd.
+function bookingHasOpened(m: Movie, leadMinutes: number): boolean {
+  return Date.now() >= new Date(m.startTime).getTime() - leadMinutes * 60_000;
 }
 
 // A finished show has nothing left to act on: its quota is spent, edit and delete are already
@@ -67,6 +70,16 @@ export function MoviesPage() {
 
   // Status and seat counts move on their own (cron jobs) — keep the table in step.
   useLiveMovies();
+
+  // Both admin tiers may read the timings; only the lead matters here. Falls back to the
+  // server's own default until it loads.
+  const { data: timings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: async () =>
+      (await api.get<{ settings: { visibilityLeadMinutes: number } }>('/settings')).data.settings,
+    staleTime: 60_000,
+  });
+  const leadMinutes = timings?.visibilityLeadMinutes ?? 60;
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['movies', page],
@@ -125,7 +138,7 @@ export function MoviesPage() {
           )}
           {/* Allocation and details are frozen the moment booking opens: people
               are choosing seats against these numbers from that point on. */}
-          {!bookingHasOpened(m) && (
+          {!bookingHasOpened(m, leadMinutes) && (
             <>
               <Tooltip label="Allocate seats across units">
                 <Button

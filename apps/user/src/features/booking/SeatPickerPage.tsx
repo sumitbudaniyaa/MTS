@@ -24,6 +24,8 @@ interface SeatView {
 interface SeatMap {
   rows: string[];
   seats: SeatView[];
+  /** Hold duration from the live admin setting — never assume it. */
+  holdSeconds?: number;
   /**
    * What this person may actually pick: the lesser of their family room and their unit's
    * remaining quota. `unitRemaining` is null when unit quota doesn't apply to this movie.
@@ -35,8 +37,6 @@ interface SeatMap {
     unitRemaining: number | null;
   };
 }
-
-const HOLD_SECONDS = 120;
 
 /**
  * Seat-map geometry at zoom 1, in px. Zoom scales these values rather than applying a CSS
@@ -153,6 +153,9 @@ export function SeatPickerPage() {
   // presenting a map where every tap is silently rejected.
   const unitExhausted = data?.allowance?.unitRemaining === 0 && selected.length === 0;
 
+  // The server's own hold duration; 120 is only a stand-in until the map loads.
+  const holdSeconds = data?.holdSeconds ?? 120;
+
   const statusOf = (s: SeatView): Status => live[s.label] ?? s.status;
 
   async function toggle(seat: SeatView) {
@@ -180,7 +183,7 @@ export function SeatPickerPage() {
       } else {
         await api.post(`/seating/movies/${movieId}/hold`, { labels: [seat.label] });
         setSelected((sel) => (sel.includes(seat.label) ? sel : [...sel, seat.label]));
-        setSecondsLeft(HOLD_SECONDS); // hold (re)extended to 2 min
+        setSecondsLeft(holdSeconds); // hold (re)extended, using the server's own duration
       }
     } catch (err) {
       toast.error(apiErrorMessage(err, 'Seat no longer available'));

@@ -8,7 +8,7 @@ the full design and [todo.md](todo.md) for status.
 
 | Path           | What                                   | Status |
 |----------------|----------------------------------------|--------|
-| `apps/backend` | Node + Express + TS + Mongoose + socket.io | ✅ complete (43 tests) |
+| `apps/backend` | Node + Express + TS + Mongoose + socket.io | ✅ complete (57 tests) |
 | `apps/admin`   | React 19 Admin Portal (web, desktop, light/dark) | ✅ complete |
 | `apps/user`    | React 19 User app (web, mobile-first, live seat picker) | ✅ complete |
 | `apps/scanner` | React 19 Scanner app (web, mobile, QR camera) | ✅ complete |
@@ -42,11 +42,17 @@ The `admins` collection holds two roles:
 | Units — create/edit/delete | ✅ | ❌ (read-only) |
 | Personnel (USER) — create/edit/delete/bulk | ✅ | ❌ (read-only) |
 | Admin accounts — create/edit/delete | ✅ | ❌ |
+| Auditorium layout — manage | ✅ | ❌ (read-only) |
+| Operational timings — change | ✅ | ❌ (read-only) |
+| Reports · Audit · Dashboard | ✅ | ❌ |
+| Movies — create/edit/delete · seat allocation | ❌ (read-only) | ✅ |
 | Scanner operators — manage | ✅ | ✅ |
-| Movies — create/edit/delete | ❌ (read-only) | ✅ |
-| Auditorium layout — manage | ❌ (read-only) | ✅ |
-| Movie seat allocation | ❌ | ✅ |
-| Reports · Audit · Attendance · Dashboard | ✅ | ✅ |
+| **Door check-in (scan tickets)** | ❌ | ✅ |
+
+The two tiers get **different apps, not one app with buttons hidden**: SUPER_ADMIN gets the full
+desktop console, while ADMIN gets a mobile-first three-tab shell — Movies, Scanners, Scan — for
+running shows from the venue. Venue *shape* (auditorium, timings) sits with SUPER_ADMIN because it
+is set-once policy and the operational console is a handset.
 
 The **seed creates a SUPER_ADMIN**; super admins create operational ADMINs from **Settings →
 Administrators** (pick the tier). The backend enforces every rule via route authorization; the
@@ -150,8 +156,9 @@ Base path `/api/v1`. Full surface in [architecture.md](architecture.md#71-api-su
 2. Admin → **Movies**: create a movie (seats are auto-generated from the auditorium; total
    seats come from the layout). Set the **duration** — booking stays open until the show's
    end time (`startTime + duration`). Movies are shown to users early; **booking opens a
-   configurable lead time before** showtime (default 1 h — Admin → Settings → Timings).
-   Optional per-movie **"Open to all ranks"**. Saving a movie **immediately asks you to split
+   configurable lead time before** showtime (default 1 h — Settings → Timings, super admin).
+   Optional per-movie **"Open pool"** — one-way: it lifts unit quota and the JCO→Jawan rank
+   restriction immediately, and cannot be closed again (see architecture.md §3.10). Saving a movie **immediately asks you to split
    its seats across units** — allocation is part of creating a movie, not a separate page. You
    can skip it (unallocated seats stay in the common pool) and re-open it later from the
    **Allocate seats** action on the movie's row — up until showtime, when the split is frozen.
@@ -227,5 +234,5 @@ serve the built apps from any static host / nginx; if everything is one origin o
 
 > **Operational timings** (`VISIBILITY_LEAD_MINUTES`, `NO_SHOW_GRACE_MINUTES`,
 > `SEAT_HOLD_SECONDS`) are only **seed values used on the very first boot**. After that they
-> live in the database and are edited at **Admin → Settings → Timings**; changing the env vars
+> live in the database and are edited at **Settings → Timings** (super admin); changing the env vars
 > on an existing deployment does nothing.

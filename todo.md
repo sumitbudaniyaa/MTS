@@ -654,3 +654,22 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       is set. The gap moved from the button to the label wrapper, since the spinner is overlaid
       rather than laid out. Fixed in **all three** apps — same code, same bug, and the user app's
       Confirm button on the seat picker hit it too.
+- [x] **Changing the timings in Settings had no visible effect — because two clients hardcoded
+      them.** The server side was always correct (`saveSettings` writes the DB *and* updates the
+      live cache in the same call, with a test proving `isMovieVisible` follows), but:
+      - the admin Movies page decided when to lock Edit / Allocate / Delete from a **hardcoded 60
+        minutes**, so raising the lead moved the server's rule while the page carried on offering
+        buttons that then 409'd. It now reads `visibilityLeadMinutes` from `/settings`.
+      - the user app's seat picker ran its hold countdown on a **hardcoded `HOLD_SECONDS = 120`**,
+        so raising `seatHoldSeconds` made it clear the selection early and lowering it left seats
+        looking held after the server had already freed them. The seat map now carries
+        `holdSeconds` from the live setting and the picker uses it.
+      Test added: patching `seatHoldSeconds` is reflected in the next seat-map payload.
+      **57/57 tests.**
+- [x] **Timings are now edited in a dialog, not inline.** Super admin → Settings showed three live
+      number inputs with a Save button, so every keystroke was a pending change to venue-wide
+      policy sitting in an ambiguous state. The card now displays the current values read-only with
+      an **Edit** button, matching "My account" directly above it; the dialog holds the fields, the
+      min/max validation and the dirty check, and saves once. On success it seeds the `['settings']`
+      cache, so the Movies page — which reads the same key for its edit-lock window — picks the new
+      lead up without a refetch.

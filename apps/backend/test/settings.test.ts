@@ -6,6 +6,7 @@ import { AdminModel, MovieModel } from '../src/models/index.js';
 import { hashPassword } from '../src/utils/password.js';
 import { loadSettings, settings } from '../src/config/settings.js';
 import { isMovieVisible } from '../src/models/movie.model.js';
+import { getMovieSeatMap } from '../src/modules/seating/seating.service.js';
 import { Roles } from '../src/types/index.js';
 
 function startApp(): Promise<{ url: string; close: () => void }> {
@@ -133,6 +134,33 @@ describe('runtime settings', () => {
       // And an unauthenticated caller gets nothing.
       const anon = await fetch(`${url}/api/v1/settings`);
       expect(anon.status).toBe(401);
+    } finally {
+      close();
+    }
+  });
+});
+
+describe('changed timings reach the clients, not just the server', () => {
+  it('sends the live seat-hold duration with the seat map', async () => {
+    const { url, close } = await startApp();
+    try {
+      const { superAdmin } = await tokens(url);
+      await fetch(`${url}/api/v1/settings`, {
+        method: 'PATCH',
+        headers: { authorization: `Bearer ${superAdmin}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ seatHoldSeconds: 300 }),
+      });
+
+      // The picker used to hardcode 120s, so raising this left it clearing the selection early
+      // and lowering it left seats looking held after the server had freed them.
+      const movie = await MovieModel.create({
+        title: 'Hold',
+        showDate: new Date(Date.now() + 30 * 60_000),
+        startTime: new Date(Date.now() + 30 * 60_000),
+        totalSeats: 1,
+      });
+      const map = await getMovieSeatMap(movie.id);
+      expect(map.holdSeconds).toBe(300);
     } finally {
       close();
     }

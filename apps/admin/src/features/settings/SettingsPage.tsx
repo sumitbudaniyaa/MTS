@@ -81,42 +81,27 @@ const TIMING_FIELDS: Array<{
   },
 ];
 
-/** Operational timings. Editable by an operational admin; read-only for a super admin. */
+/**
+ * Operational timings — read-only here, edited in a dialog.
+ *
+ * These were live inputs on the page, which meant every keystroke was a pending change to
+ * venue-wide policy sitting in an ambiguous state next to a Save button. Reading them is the
+ * common case; changing them is deliberate, so it gets its own confirmable surface, matching
+ * "My account" directly above.
+ */
 function TimingsCard() {
-  const qc = useQueryClient();
   const { canManageTimings } = useRole();
-  const [draft, setDraft] = useState<AppTimings | null>(null);
+  const [editing, setEditing] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['settings'],
     queryFn: async () => (await api.get<{ settings: AppTimings }>('/settings')).data.settings,
   });
 
-  const save = useMutation({
-    mutationFn: (patch: AppTimings) =>
-      api.patch<{ settings: AppTimings }>('/settings', patch).then((r) => r.data.settings),
-    onSuccess: (updated) => {
-      qc.setQueryData(['settings'], updated);
-      setDraft(null);
-      toast.success('Timings updated');
-    },
-    onError: (e) => toast.error(apiErrorMessage(e)),
-  });
-
-  const current = draft ?? data;
-  const dirty =
-    !!draft && !!data && TIMING_FIELDS.some((f) => draft[f.key] !== data[f.key]);
-  const invalid =
-    !!current &&
-    TIMING_FIELDS.some((f) => {
-      const v = current[f.key];
-      return !Number.isFinite(v) || v < f.min || v > f.max;
-    });
-
   return (
     <Card>
-      <div className="flex items-start justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold text-fg">Timings</h2>
           <p className="mt-1 text-xs text-muted">
             {canManageTimings
@@ -124,50 +109,93 @@ function TimingsCard() {
               : 'Managed by a super admin.'}
           </p>
         </div>
+        {canManageTimings && data && (
+          <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
+            <Pencil className="h-3.5 w-3.5" /> Edit
+          </Button>
+        )}
       </div>
 
       {isLoading && <LoadingState />}
-      {current && (
-        <div className="mt-4 space-y-4">
+      {data && (
+        <dl className="mt-4 space-y-3">
           {TIMING_FIELDS.map((f) => (
             <div key={f.key}>
-              <div className="flex items-end gap-2">
-                <Input
-                  label={f.label}
-                  type="number"
-                  min={f.min}
-                  max={f.max}
-                  className="max-w-[10rem]"
-                  disabled={!canManageTimings}
-                  value={String(current[f.key])}
-                  onChange={(e) =>
-                    setDraft({ ...current, [f.key]: Number(e.target.value) })
-                  }
-                />
-                <span className="pb-2 text-xs text-muted">{f.unit}</span>
-              </div>
-              <p className="mt-1 text-xs text-muted">{f.help}</p>
+              <dt className="text-sm text-fg">{f.label}</dt>
+              <dd className="text-sm font-medium tabular-nums text-fg">
+                {data[f.key]} <span className="font-normal text-muted">{f.unit}</span>
+              </dd>
             </div>
           ))}
-
-          {canManageTimings && (
-            <div className="flex justify-end gap-2 border-t border-border pt-3">
-              <Button variant="secondary" size="sm" disabled={!dirty} onClick={() => setDraft(null)}>
-                Reset
-              </Button>
-              <Button
-                size="sm"
-                loading={save.isPending}
-                disabled={!dirty || invalid}
-                onClick={() => draft && save.mutate(draft)}
-              >
-                Save timings
-              </Button>
-            </div>
-          )}
-        </div>
+        </dl>
       )}
+
+      {editing && data && <TimingsDialog current={data} onClose={() => setEditing(false)} />}
     </Card>
+  );
+}
+
+function TimingsDialog({ current, onClose }: { current: AppTimings; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [draft, setDraft] = useState<AppTimings>(current);
+
+  const save = useMutation({
+    mutationFn: (patch: AppTimings) =>
+      api.patch<{ settings: AppTimings }>('/settings', patch).then((r) => r.data.settings),
+    onSuccess: (updated) => {
+      // Seed the cache so the Movies page — which reads the same key for its edit-lock window —
+      // picks the new lead up without a refetch.
+      qc.setQueryData(['settings'], updated);
+      toast.success('Timings updated');
+      onClose();
+    },
+    onError: (e) => toast.error(apiErrorMessage(e)),
+  });
+
+  const dirty = TIMING_FIELDS.some((f) => draft[f.key] !== current[f.key]);
+  const invalid = TIMING_FIELDS.some((f) => {
+    const v = draft[f.key];
+    return !Number.isFinite(v) || v < f.min || v > f.max;
+  });
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Edit timings"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            loading={save.isPending}
+            disabled={!dirty || invalid}
+            onClick={() => save.mutate(draft)}
+          >
+            Save
+          </Button>
+        </>
+      }
+    >
+      {TIMING_FIELDS.map((f) => (
+        <div key={f.key}>
+          <div className="flex items-end gap-2">
+            <Input
+              label={f.label}
+              type="number"
+              min={f.min}
+              max={f.max}
+              className="max-w-[10rem]"
+              value={String(draft[f.key])}
+              onChange={(e) => setDraft({ ...draft, [f.key]: Number(e.target.value) })}
+            />
+            <span className="pb-2 text-xs text-muted">{f.unit}</span>
+          </div>
+          <p className="mt-1 text-xs text-muted">{f.help}</p>
+        </div>
+      ))}
+    </Modal>
   );
 }
 
