@@ -89,6 +89,7 @@ export function ReportsPage() {
         open={!!movieId}
         onClose={() => setMovieId('')}
         title={report.data ? report.data.movie.title : 'Report'}
+        size="3xl"
       >
         {report.isLoading && <LoadingState />}
         {/* A show that hasn't finished isn't an error — the report simply doesn't exist yet. */}

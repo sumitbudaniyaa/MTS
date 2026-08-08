@@ -2,7 +2,15 @@ import { type ReactNode, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { Button } from './Button';
 
-const modalWidths = { md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl' } as const;
+const modalWidths = {
+  sm: 'max-w-sm',
+  md: 'max-w-lg',
+  lg: 'max-w-2xl',
+  xl: 'max-w-4xl',
+  '2xl': 'max-w-5xl',
+  '3xl': 'max-w-6xl',
+  '4xl': 'max-w-7xl',
+} as const;
 
 export function Modal({
   open,
