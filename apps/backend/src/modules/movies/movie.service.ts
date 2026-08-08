@@ -131,7 +131,7 @@ export async function listVisibleMovies(now: Date = new Date()): Promise<MovieDo
   // future (a movie stays listed and bookable right up to when the show ends).
   const dayAgo = new Date(now.getTime() - 24 * 60 * 60_000);
   const candidates = await MovieModel.find({
-    status: { $in: [MovieStatus.SCHEDULED, MovieStatus.OPEN, MovieStatus.POOL_RELEASED] },
+    status: { $in: [MovieStatus.SCHEDULED, MovieStatus.OPEN] },
     startTime: { $gte: dayAgo },
   }).sort('startTime');
   return candidates.filter((m) => now.getTime() < movieEndTime(m).getTime());
@@ -154,7 +154,7 @@ export async function listScannerMovies(now: Date = new Date()): Promise<
 > {
   const dayAgo = new Date(now.getTime() - 24 * 60 * 60_000);
   const movies = await MovieModel.find({
-    status: { $in: [MovieStatus.SCHEDULED, MovieStatus.OPEN, MovieStatus.POOL_RELEASED] },
+    status: { $in: [MovieStatus.SCHEDULED, MovieStatus.OPEN] },
     startTime: { $gte: dayAgo },
   }).sort('startTime');
   return movies.map((m) => ({

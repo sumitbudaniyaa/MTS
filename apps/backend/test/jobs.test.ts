@@ -10,7 +10,7 @@ import {
   UnitModel,
   UserModel,
 } from '../src/models/index.js';
-import { releaseOpenPool } from '../src/jobs/openPool.job.js';
+import { setMovieOpenToAll } from '../src/modules/seating/seating.service.js';
 import { openBookingWindow } from '../src/jobs/openBooking.job.js';
 import { reclaimUnclaimedSeats } from '../src/jobs/reclaim.job.js';
 import { setAllocations } from '../src/modules/seats/seat.service.js';
@@ -24,16 +24,15 @@ import { BookingSource, MovieStatus, Rank, TicketStatus } from '../src/constants
 import { Roles } from '../src/types/index.js';
 
 describe('open-pool release (M6)', () => {
-  it('moves unused unit quota into the common pool; idempotent', async () => {
+  it('immediately computes pool seats when openToAll is set; idempotent', async () => {
     const unit = await UnitModel.create({ name: 'Signals', code: 'SIG' });
     const movie = await MovieModel.create({
       title: 'Pool',
       showDate: new Date(Date.now() - 60_000),
-      startTime: new Date(Date.now() - 60_000), // already started -> due
+      startTime: new Date(Date.now() - 60_000),
       totalSeats: 5,
       seatsBooked: 2,
       status: MovieStatus.SCHEDULED,
-      openToAll: true, // admin pressed "Open to all" — the only thing that arms the release
     });
     await SeatAllocationModel.create({
       movie: movie._id,
@@ -42,19 +41,18 @@ describe('open-pool release (M6)', () => {
       booked: 2, // 3 unused -> should be released
     });
 
-    const released = await releaseOpenPool(new Date());
-    expect(released).toBe(1);
+    await setMovieOpenToAll(movie.id, true);
 
     const fresh = await MovieModel.findById(movie._id);
-    expect(fresh?.status).toBe(MovieStatus.POOL_RELEASED);
+    expect(fresh?.status).toBe(MovieStatus.SCHEDULED); // status unchanged
+    expect(fresh?.openToAll).toBe(true);
     expect(fresh?.poolSeats).toBe(3);
     expect(fresh?.poolReleasedAt).toBeTruthy();
     const alloc = await SeatAllocationModel.findOne({ movie: movie._id });
     expect(alloc?.released).toBe(3);
 
-    // Idempotent — second run does nothing.
-    const again = await releaseOpenPool(new Date());
-    expect(again).toBe(0);
+    // Idempotent — setting again does nothing.
+    await setMovieOpenToAll(movie.id, true);
     expect((await MovieModel.findById(movie._id))?.poolSeats).toBe(3);
   });
 
@@ -63,7 +61,7 @@ describe('open-pool release (M6)', () => {
     const movie = await MovieModel.create({
       title: 'Restricted',
       showDate: new Date(Date.now() - 60_000),
-      startTime: new Date(Date.now() - 60_000), // started: due in every respect but one
+      startTime: new Date(Date.now() - 60_000),
       totalSeats: 5,
       seatsBooked: 2,
       status: MovieStatus.SCHEDULED,
@@ -76,18 +74,15 @@ describe('open-pool release (M6)', () => {
       booked: 2,
     });
 
-    expect(await releaseOpenPool(new Date())).toBe(0);
-
     const fresh = await MovieModel.findById(movie._id);
-    expect(fresh?.status).toBe(MovieStatus.SCHEDULED); // never reaches POOL_RELEASED
+    expect(fresh?.status).toBe(MovieStatus.SCHEDULED);
     expect(fresh?.poolSeats).toBe(0);
     expect(fresh?.poolReleasedAt).toBeNull();
     // The unit keeps its 3 unused seats.
     expect((await SeatAllocationModel.findOne({ movie: movie._id }))?.released).toBe(0);
 
-    // Flipping the switch later arms it — the release happens on the next tick.
-    await MovieModel.updateOne({ _id: movie._id }, { $set: { openToAll: true } });
-    expect(await releaseOpenPool(new Date())).toBe(1);
+    // Flipping the switch releases immediately.
+    await setMovieOpenToAll(movie.id, true);
     expect((await MovieModel.findById(movie._id))?.poolSeats).toBe(3);
   });
 });
@@ -119,7 +114,8 @@ describe('seat reclaim (M6)', () => {
       startTime: startedAt,
       totalSeats: 3,
       seatsBooked: 3,
-      status: MovieStatus.POOL_RELEASED,
+      status: MovieStatus.OPEN,
+      openToAll: true,
     });
     const booking = await BookingModel.create({
       user: user._id,
@@ -147,7 +143,7 @@ describe('seat reclaim (M6)', () => {
     // Show is still running (default 180m duration), so it stays in the rotation and keeps
     // its bookable status — freed seats are meant to be re-sold mid-screening.
     expect(fresh?.noShowProcessedAt).toBeNull();
-    expect(fresh?.status).toBe(MovieStatus.POOL_RELEASED);
+    expect(fresh?.status).toBe(MovieStatus.OPEN);
 
     const after = await BookingModel.findOne({ movie: movie._id });
     const statuses = after?.tickets.map((t) => t.status).sort();
@@ -177,7 +173,8 @@ describe('seat reclaim (M6)', () => {
       durationMinutes: 180,
       totalSeats: 1,
       seatsBooked: 1,
-      status: MovieStatus.POOL_RELEASED,
+      status: MovieStatus.OPEN,
+      openToAll: true,
     });
     const bookedAt = new Date(Date.now() - 60_000); // grabbed a freed seat a minute ago
     const booking = await BookingModel.create({
@@ -221,7 +218,8 @@ describe('seat reclaim (M6)', () => {
       durationMinutes: 60, // ended an hour ago
       totalSeats: 1,
       seatsBooked: 1,
-      status: MovieStatus.POOL_RELEASED,
+      status: MovieStatus.OPEN,
+      openToAll: true,
     });
     // Booked 5 minutes before the end: a naive bookedAt + 15m deadline would fall AFTER the
     // show finished, leaving the ticket unresolved once the report became available.
@@ -440,14 +438,13 @@ describe('open-pool release with no allocations', () => {
       startTime,
       totalSeats: 4,
       status: MovieStatus.SCHEDULED,
-      openToAll: true,
     });
     await generateMovieSeats(movie.id);
     // Allocation deliberately skipped — the whole auditorium is already common.
 
-    expect(await releaseOpenPool(new Date())).toBe(1);
+    await setMovieOpenToAll(movie.id, true);
     const after = await MovieModel.findById(movie._id);
-    expect(after?.status).toBe(MovieStatus.POOL_RELEASED);
+    expect(after?.status).toBe(MovieStatus.SCHEDULED); // status unchanged
     // Previously 0, which made `poolSeats` a gate that refused every booking on a movie whose
     // seats were all free.
     expect(after?.poolSeats).toBe(4);

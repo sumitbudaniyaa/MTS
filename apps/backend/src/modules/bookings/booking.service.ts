@@ -23,7 +23,7 @@ import {
 import { Roles } from '../../types/index.js';
 import type { Request } from 'express';
 
-const BOOKABLE = [MovieStatus.SCHEDULED, MovieStatus.OPEN, MovieStatus.POOL_RELEASED] as const;
+const BOOKABLE = [MovieStatus.SCHEDULED, MovieStatus.OPEN] as const;
 
 interface CreateArgs {
   userId: string;
@@ -91,7 +91,7 @@ export async function createBooking(args: CreateArgs): Promise<BookingDoc> {
         );
       }
 
-      const pooled = movie.status === MovieStatus.POOL_RELEASED;
+      const pooled = Boolean(movie.openToAll);
       const source = pooled ? BookingSource.OPEN_POOL : BookingSource.UNIT_QUOTA;
       let bookingUnit: Types.ObjectId | null = null;
 

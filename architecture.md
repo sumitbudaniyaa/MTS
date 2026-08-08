@@ -265,17 +265,10 @@ They live in a single-document `settings` collection and are served by
 `config/settings.ts` as a **synchronous in-memory cache** — `isMovieVisible`, seat holds and
 the reconciliation jobs read them on hot paths and must not hit Mongo per call. The cache is
 primed at boot, updated in-process on save, and re-read every 30 s. That last part matters
-under PM2 cluster mode: a save handled by one worker reaches the others on their next re-read,
-so a change is fleet-wide **within ~30 s**. The `*_MINUTES` / `SEAT_HOLD_SECONDS` env vars are
-only **seed values** for the very first boot; changing them later has no effect on an existing
-deployment.
-
-### 3.6.2 Movie lifecycle (`MovieStatus`)
+under PM2 cluster mode: a save handled by one worker reaches th### 3.6.2 Movie lifecycle (`MovieStatus`)
 
 ```
-                                                     ┌─ openToAll ─> POOL_RELEASED ─┐
-DRAFT ─allocations─> SCHEDULED ─window opens─> OPEN ──┤       (at startTime)         ├─> COMPLETED
-                                                      └─ otherwise, stays OPEN ──────┘   (end time)
+DRAFT ─allocations─> SCHEDULED ─window opens─> OPEN ───(end time)───> COMPLETED
 
         CLOSED / CANCELLED  <── admin, from any pre-show state
 ```
@@ -285,12 +278,8 @@ DRAFT ─allocations─> SCHEDULED ─window opens─> OPEN ──┤       (at 
 | `DRAFT` | schema default on create | Created, not yet allocated. Not listed, not bookable. |
 | `SCHEDULED` | `seat.service.setAllocations` once allocations equal capacity (or set directly by an admin) | Ready, waiting for its booking window. |
 | `OPEN` | `jobs/openBooking.job.ts` at `startTime − visibilityLeadMinutes` | Booking window is live. |
-| `POOL_RELEASED` | `jobs/openPool.job.ts` at `startTime`, **only if `openToAll`** | Unused unit quota has moved to the common pool; anyone may book what's left. A restricted movie never reaches this state. |
 | `COMPLETED` | `jobs/reclaim.job.ts`, post-show sweep | Ran to its end time and has been retired. Terminal. |
 | `CLOSED` / `CANCELLED` | admin, via `PATCH /movies/:id` | Ended early / called off. Terminal. |
-
-`POOL_RELEASED` is **not** on every movie's path. Dissolving the unit split is an admin
-decision (the "Open to all" toggle), not something the clock does on its own — see §3.7.
 
 Two rules keep this honest:
 
@@ -299,26 +288,16 @@ Two rules keep this honest:
   why `OPEN` is safe to stamp on a one-minute tick — a movie whose window opens between ticks
   is bookable immediately regardless of what its status still says.
 - **Guards that must not lag read the clock, not the status.** `setAllocations` refuses edits
-  from `now >= startTime`, not from `status === POOL_RELEASED`: the pool-release job runs on a
-  one-minute tick, and inside that gap a started movie is still `SCHEDULED`/`OPEN`, so a status
-  check would wave the edit through and re-cut quota that has already been given away.
+  from `now >= startTime`: a started movie is no longer editable for quota allocation.
 
 ### 3.7 Scheduled Jobs (node-cron)
-- **Open-pool release** (`jobs/openPool.job.ts`): at `movie.startTime`, move each unit's
-  unbooked quota into `poolSeats`. **With no allocations it credits the seats that are actually
-  free instead**: `poolSeats` becomes the sole gate once the status flips, so crediting 0 made
-  an unallocated movie unbookable the instant it started — map full of free seats, every booking
-  refused. Allocation is optional, so that was an ordinary setup, not an edge case. **Opt-in — only for movies marked "Open to all"**
-  (`openToAll`). It used to fire for every movie, which silently dissolved the per-unit split on
-  every show; handing one unit's unused seats to everyone is a decision, so it takes the admin
-  pressing the button. A restricted movie keeps its quota for its whole run and never reaches
-  `POOL_RELEASED`. Flipping the toggle on later arms it, and the release happens on the next
-  tick — including mid-show. The reclaim job matches this: a no-show seat is always freed on
-  the live map, but it is only credited to `poolSeats` when the movie actually has a pool.
 - **Booking-window open** (`jobs/openBooking.job.ts`): flips `SCHEDULED → OPEN` once
   `startTime − visibilityLeadMinutes` passes, so a show that is actively selling stops being
-  reported as merely scheduled. Display only — see §3.6.2. Runs *after* the pool release on each
-  tick, so an already-started movie is never briefly marked `OPEN`.
+  reported as merely scheduled. Display only — see §3.6.2.
+- **Seat reclaim** (`jobs/reclaim.job.ts`): each ticket is judged against **its own** deadline,
+  not one deadline for the whole movie, because the two cohorts differ:
+  - booked **before** the show → deadline `startTime + noShowGraceMinutes`; missing it is a
+    genuine no-show → `EXPIRED`;arked `OPEN`.
 - **Seat reclaim** (`jobs/reclaim.job.ts`): each ticket is judged against **its own** deadline,
   not one deadline for the whole movie, because the two cohorts differ:
   - booked **before** the show → deadline `startTime + noShowGraceMinutes`; missing it is a
@@ -411,8 +390,8 @@ populates to `null`, silently losing the attribution.
   set: `seatAllowance` reports `unitRemaining: null` and bookings take the `OPEN_POOL` path, so
   a unit that had exhausted its allocation can book again straight away. Deferring this to the
   showtime pool release meant the button lifted rank gating at once while units stayed locked
-  out for the hours in between — not what "open to all" means to anyone using it. The showtime
-  release still runs, moving leftover quota into `poolSeats` for reporting.
+  out for the hours in between — not what "open to all" means to anyone using it. Opening the
+  pool computes unused quota immediately and credits `poolSeats` for reporting.
 
   **`poolSeats` is a counter, not the inventory, and never blocks a booking.** Seats are claimed
   atomically (`FREE -> BOOKED`), which is what actually prevents overselling; gating on the

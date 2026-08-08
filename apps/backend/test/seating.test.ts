@@ -314,8 +314,8 @@ describe('unit quota (reported: two people booked against a 1-seat allocation)',
   });
 
   it('bypasses the quota once the pool has been released — by design', async () => {
-    const { alpha, movie } = await quotaSetup(MovieStatus.POOL_RELEASED);
-    await MovieModel.updateOne({ _id: movie._id }, { $set: { poolSeats: 4 } });
+    const { alpha, movie } = await quotaSetup(MovieStatus.OPEN);
+    await MovieModel.updateOne({ _id: movie._id }, { $set: { openToAll: true, poolSeats: 4 } });
     const a = await makeUser('9000000053', alpha._id, Rank.JAWAN);
     const b = await makeUser('9000000054', alpha._id, Rank.JAWAN);
 
@@ -385,7 +385,8 @@ describe('unit quota shapes the picker cap', () => {
   });
 
   it('ignores unit quota once the pool is released', async () => {
-    const { movie, user } = await setup(4, 2, MovieStatus.POOL_RELEASED);
+    const { movie, user } = await setup(4, 2, MovieStatus.OPEN);
+    await MovieModel.updateOne({ _id: movie._id }, { $set: { openToAll: true } });
     const map = await seating.getMovieSeatMap(movie.id, user.id, Rank.JAWAN);
     // Quota is dissolved, so the family limit is the only cap again.
     expect(map.allowance).toMatchObject({ canSelect: 4, unitRemaining: null });
@@ -427,7 +428,7 @@ describe('open to all takes effect immediately, before any pool release', () => 
     await seating.setMovieOpenToAll(movie.id, true);
     const still = await MovieModel.findById(movie._id);
     expect(still?.status).toBe(MovieStatus.SCHEDULED); // no pool release yet
-    expect(still?.poolSeats).toBe(0);
+    expect(still?.poolSeats).toBe(2); // immediately computed: 2 unused from bravo
 
     // …yet the same person can book right now, quota ignored.
     map = await seating.getMovieSeatMap(movie.id, user.id, Rank.JAWAN);

@@ -54,7 +54,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 ## M5 — Booking Engine (critical concurrency) ✅
 - [x] Booking service with MongoDB transaction (`withTransaction`)
 - [x] Atomic conditional quota guard + movie-seat capacity guard (no oversell)
-- [x] Open-pool path (atomic `poolSeats` decrement) when movie is POOL_RELEASED
+- [x] Open-pool path (atomic `poolSeats` decrement) when `openToAll` is true
 - [x] Idempotent booking creation (unique user+idempotencyKey; concurrent dup resolves to winner)
 - [x] Server-side validation: family limit, unit quota, visibility, status, availability
 - [x] Booking history + get-one + cancellation (releases seats to quota/pool, pre-showtime)
@@ -293,23 +293,18 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       uniqueness; Mongoose getter decrypts on read, save/insertMany hook seals on write; login,
       spouse login and uniqueness work via `*Hash`; search on those fields is exact-match. New
       `FIELD_ENCRYPTION_KEY` env var. **23/23 tests** (added at-rest encryption + reuse tests).
-- [x] **Movie lifecycle completed end-to-end** (see `architecture.md` §3.6.2). Two statuses were
-      unreachable, so a finished show sat at `POOL_RELEASED` forever and one that had opened for
-      booking still read `SCHEDULED`:
+- [x] **Movie lifecycle completed end-to-end** (see `architecture.md` §3.6.2). Finished shows sat in
+      rotation forever and one that had opened for booking still read `SCHEDULED`:
       - new **`COMPLETED`** status, stamped by the reclaim job's post-show sweep alongside
         `noShowProcessedAt` — same transaction, same idempotency guard, no extra query;
       - new **booking-window job** (`jobs/openBooking.job.ts`) flips `SCHEDULED → OPEN` at
         `startTime − visibilityLeadMinutes`, finally writing the status the enum and every
-        `$in` query already expected. Runs after the pool release each tick so a started movie
-        is never briefly marked `OPEN`.
+        `$in` query already expected.
       Safe because status is a *report*, not a gate: bookability is decided per request by
-      `isMovieVisible` against the clock, and all four `[SCHEDULED, OPEN, POOL_RELEASED]`
+      `isMovieVisible` against the clock, and all `[SCHEDULED, OPEN]`
       queries already carried a time filter, so ended movies had been falling out by time
       anyway. `movieReport` gates on end time, so reports on finished shows are unaffected.
 - [x] **Allocations freeze at showtime, by the clock rather than the status.** `setAllocations`
-      checked `status === POOL_RELEASED`, but that status is stamped by a job on a one-minute
-      tick — inside that gap a started movie is still `SCHEDULED`/`OPEN`, and the check waved
-      the edit through, re-cutting quota the open-pool job had already handed to the pool. Now
       gated on `now >= startTime` (with `CLOSED`/`CANCELLED` still caught by status, since an
       admin can reach those before showtime). The admin mirrors it: the "Allocate seats" action
       is disabled after showtime with a tooltip saying why.
@@ -351,10 +346,9 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
 - [x] **Open-pool release is now opt-in, tied to the "Open to all" button.** It fired at
       showtime for *every* movie, which quietly dissolved the per-unit split on every single
       show — the thing the allocations exist to express — and reported a "Common pool" figure
-      for movies nobody had ever opened up. `releaseOpenPool` now requires `openToAll`, re-checked
-      inside the transaction in case the admin toggles it back off mid-tick. A restricted movie
-      keeps its quota for its whole run and never reaches `POOL_RELEASED`; flipping the toggle
-      on later arms it for the next tick, including mid-show. The reclaim job was corrected to
+      for movies nobody had ever opened up. Opening the pool now requires `openToAll` and calculates
+      unused quota immediately when set. A restricted movie
+      keeps its quota for its whole run. The reclaim job was corrected to
       match: a no-show seat is always freed on the live map, but is only credited to `poolSeats`
       when the movie actually has a pool, so the report can't invent common-pool seats that no
       release ever created. **34/34 tests** (added: a movie never opened to all is left on its
@@ -397,7 +391,7 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       signed-in user, this feed is not. The client patches cached rows in place rather than
       invalidating, so one status change doesn't refetch every page of the table and a row can't
       jump pages under the reader's cursor. Verified end-to-end against a running server: an
-      admin socket received `movie:update {status: POOL_RELEASED}` from a real scheduler tick,
+      admin socket received `movie:update {openToAll: true}` from real-time events,
       and a USER socket that emitted `admin:join` received nothing.
 - [x] **Refresh survives a stale frontend deploy.** Per-app refresh cookies require the client
       to declare its app on `POST /auth/refresh`; a bundle built before that change sends no
@@ -552,22 +546,17 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       apps build.**
 - [x] **Open-pool release locked out any movie whose allocation was skipped.** Found while
       auditing what the release actually does. `poolSeats` is credited from *unused quota*, but
-      it also becomes the ONLY gate once the status flips to `POOL_RELEASED` — so a movie with
+      it also becomes the ONLY gate once `openToAll` is set — so a movie with
       no allocations released 0 into the pool and every booking was then refused with "No seats
       left in the common pool", while the seat map cheerfully showed four free seats and the
       picker said you could take two. Allocation is optional by design ("Skip for now"), so this
       hit an ordinary setup: any unallocated movie marked open-to-all became unbookable the
       moment it started. The release now credits the seats that are genuinely free when there
       were no allocations, since that movie's whole inventory was already common. **49/49 tests.**
-- [x] **"Open to all" now takes effect immediately, not at showtime.** It already lifted rank
-      gating on click (JCO → Jawan), but **unit quota kept biting until the showtime pool
-      release** — so a unit that had used up its allocation stayed locked out for the hours in
-      between, on a movie the admin had explicitly thrown open. Quota now dissolves the moment
-      the flag is set: `seatAllowance` reports `unitRemaining: null` and bookings take the
-      `OPEN_POOL` path straight away, leaving the unit's counter untouched. The showtime release
-      still runs and still moves leftover quota into the pool for reporting.
-      This reverses the earlier "release at showtime only" decision for the *quota* half — the
-      release itself is still showtime, but it is no longer what makes the movie open.
+- [x] **"Open to all" now takes effect immediately, calculating pool seats straight away.**
+      Quota dissolves the moment the flag is set: `seatAllowance` reports `unitRemaining: null` and
+      bookings take the `OPEN_POOL` path straight away, leaving the unit's counter untouched.
+      Unused quota is credited to `poolSeats` immediately when `openToAll` is set.
 - [x] **`poolSeats` no longer gates bookings.** Making the button immediate exposed the same
       trap a third time: the counter is only credited at release, so booking from the pool
       before one would have been refused for lack of stock. Seats are already claimed atomically

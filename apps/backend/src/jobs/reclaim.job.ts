@@ -34,7 +34,7 @@ export async function reclaimUnclaimedSeats(now: Date = new Date()): Promise<num
   // Candidates: the earliest deadline any of their tickets could have (startTime + grace) has
   // passed, and the final post-show sweep hasn't retired them yet.
   const due = await MovieModel.find({
-    status: { $in: [MovieStatus.OPEN, MovieStatus.SCHEDULED, MovieStatus.POOL_RELEASED] },
+    status: { $in: [MovieStatus.OPEN, MovieStatus.SCHEDULED] },
     startTime: { $lte: new Date(now.getTime() - graceMs) },
     noShowProcessedAt: null,
   }).select('_id');
@@ -82,7 +82,7 @@ export async function reclaimUnclaimedSeats(now: Date = new Date()): Promise<num
             else noShows += changed;
 
             // Restore unit quota for expired tickets if the movie is not pool-released yet
-            if (booking.source === BookingSource.UNIT_QUOTA && booking.unit && movie.status !== MovieStatus.POOL_RELEASED) {
+            if (booking.source === BookingSource.UNIT_QUOTA && booking.unit && !movie.openToAll) {
               await SeatAllocationModel.updateOne(
                 { movie: _id, unit: booking.unit, booked: { $gte: changed } },
                 { $inc: { booked: -changed } },
@@ -109,11 +109,9 @@ export async function reclaimUnclaimedSeats(now: Date = new Date()): Promise<num
           // pool there would invent common-pool seats that no pool release ever created, and
           // report them as such.
           movie.seatsBooked = Math.max(0, movie.seatsBooked - reclaimed);
-          if (movie.status === MovieStatus.POOL_RELEASED) movie.poolSeats += reclaimed;
+          if (movie.openToAll) movie.poolSeats += reclaimed;
         }
         // Only the post-show sweep retires the movie; until then it stays in the rotation.
-        // Retiring also moves it to its terminal status, so a finished show stops presenting
-        // itself as POOL_RELEASED (i.e. still selling seats) for the rest of time.
         if (ended) {
           movie.noShowProcessedAt = now;
           movie.status = MovieStatus.COMPLETED;

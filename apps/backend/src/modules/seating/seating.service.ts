@@ -30,7 +30,7 @@ import {
 import { Roles } from '../../types/index.js';
 import { settings } from '../../config/settings.js';
 
-const BOOKABLE = [MovieStatus.SCHEDULED, MovieStatus.OPEN, MovieStatus.POOL_RELEASED];
+const BOOKABLE = [MovieStatus.SCHEDULED, MovieStatus.OPEN];
 
 // ---- Auditorium layout (admin) --------------------------------------------
 
@@ -100,6 +100,10 @@ export async function generateMovieSeats(movieId: string): Promise<number> {
  * bookings they never counted — units would appear to have headroom they had already spent, and
  * the numbers would not add up for the rest of the show. There is no coherent way back, so the
  * server refuses rather than letting an admin discover that the hard way.
+ *
+ * When the pool is opened, we immediately compute the unused unit quota and credit it to
+ * `poolSeats` and stamp `poolReleasedAt`. The movie keeps its current status (SCHEDULED/OPEN)
+ * — the `openToAll` flag alone drives all pool behavior.
  */
 export async function setMovieOpenToAll(movieId: string, open: boolean): Promise<boolean> {
   const movie = await MovieModel.findById(movieId);
@@ -109,8 +113,38 @@ export async function setMovieOpenToAll(movieId: string, open: boolean): Promise
   }
   if (movie.openToAll === open) return movie.openToAll; // already there — nothing to do
   movie.openToAll = open;
+
+  // Immediately release the pool: compute unused quota and credit poolSeats now.
+  if (open && !movie.poolReleasedAt) {
+    const allocations = await SeatAllocationModel.find({ movie: movie._id });
+    let unused = 0;
+    for (const a of allocations) {
+      const free = Math.max(0, a.allocated - a.booked);
+      if (free > 0) {
+        a.released += free;
+        await a.save();
+        unused += free;
+      }
+    }
+
+    // A movie with no allocations has its whole inventory as common seats —
+    // count the actually free seats so poolSeats isn't stuck at 0.
+    if (allocations.length === 0) {
+      unused = await MovieSeatModel.countDocuments({
+        movie: movie._id,
+        status: SeatStatus.FREE,
+      });
+    }
+
+    movie.poolSeats += unused;
+    movie.poolReleasedAt = new Date();
+  }
+
   await movie.save();
-  broadcastMovie(movie.id, { openToAll: movie.openToAll });
+  broadcastMovie(movie.id, {
+    openToAll: movie.openToAll,
+    poolSeats: movie.poolSeats,
+  });
   // Anyone sitting on the seat map right now holds `bookable` flags computed under the old
   // rule — push the change so seats unlock (or re-lock) without a reload.
   broadcastMovieRules(movie.id, movie.openToAll);
@@ -433,7 +467,7 @@ export async function seatAllowance(
   // IMMEDIATELY — the whole point of the button is that anyone can book right away, so waiting
   // for the showtime pool release would leave units locked out for the hours in between.
   const quotaApplies =
-    allocCount > 0 && !movie?.openToAll && movie?.status !== MovieStatus.POOL_RELEASED;
+    allocCount > 0 && !movie?.openToAll;
   let unitRemaining: number | null = null;
   if (quotaApplies) {
     if (!unitId) {
@@ -660,7 +694,7 @@ export async function bookSeats(args: {
   // "Open to all" counts as pooled from the instant it is set, even before the showtime
   // release — otherwise the button would lift rank gating immediately but leave unit quota
   // biting until the show started, which is not what "open to all" means to anyone.
-  const pooled = movie.status === MovieStatus.POOL_RELEASED || Boolean(movie.openToAll);
+  const pooled = Boolean(movie.openToAll);
   const unitId = user.unit ? String(user.unit) : null;
 
   const source: BookingSourceType = pooled

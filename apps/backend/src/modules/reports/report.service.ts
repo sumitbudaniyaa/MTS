@@ -18,7 +18,7 @@ export async function overview() {
     ScannerModel.countDocuments({}),
     MovieModel.countDocuments({}),
     MovieModel.countDocuments({
-      status: { $in: [MovieStatus.SCHEDULED, MovieStatus.OPEN, MovieStatus.POOL_RELEASED] },
+      status: { $in: [MovieStatus.SCHEDULED, MovieStatus.OPEN] },
       startTime: { $gte: new Date() },
     }),
     BookingModel.aggregate<{ _id: string; count: number }>([
@@ -32,7 +32,7 @@ export async function overview() {
 
   // Upcoming/ongoing movies with live booking counts (next 8 by showtime).
   const upcomingList = await MovieModel.find({
-    status: { $in: [MovieStatus.SCHEDULED, MovieStatus.OPEN, MovieStatus.POOL_RELEASED] },
+    status: { $in: [MovieStatus.SCHEDULED, MovieStatus.OPEN] },
     startTime: { $gte: new Date(Date.now() - 6 * 60 * 60_000) },
   })
     .sort('startTime')

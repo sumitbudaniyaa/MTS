@@ -31,7 +31,6 @@ const statusTone: Record<MovieStatus, 'neutral' | 'accent' | 'success' | 'warnin
   DRAFT: 'neutral',
   SCHEDULED: 'accent',
   OPEN: 'success',
-  POOL_RELEASED: 'warning',
   COMPLETED: 'neutral',
   CLOSED: 'neutral',
   CANCELLED: 'danger',
@@ -85,7 +84,6 @@ export function DashboardPage() {
               <Table
                 head={
                   <tr>
-                    <Th>Poster</Th>
                     <Th>Movie</Th>
                     <Th>Showtime</Th>
                     <Th>Status</Th>
@@ -99,19 +97,21 @@ export function DashboardPage() {
                   return (
                     <tr key={m.id}>
                       <Td>
-                        {m.poster ? (
-                          <img
-                            src={m.poster}
-                            alt={m.title}
-                            className="h-12 w-9 rounded object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-12 w-9 items-center justify-center rounded bg-surface text-muted">
-                            <Film className="h-4 w-4" />
-                          </div>
-                        )}
+                        <div className="flex items-center gap-3">
+                          {m.poster ? (
+                            <img
+                              src={m.poster}
+                              alt={m.title}
+                              className="h-10 w-7 shrink-0 rounded object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-10 w-7 shrink-0 items-center justify-center rounded bg-surface text-muted">
+                              <Film className="h-4 w-4" />
+                            </div>
+                          )}
+                          <span className="font-medium">{m.title}</span>
+                        </div>
                       </Td>
-                      <Td className="font-medium">{m.title}</Td>
                       <Td className="whitespace-nowrap">{fmt(m.startTime)}</Td>
                       <Td>
                         <Badge tone={statusTone[m.status]}>{m.status}</Badge>
