@@ -84,7 +84,7 @@ export function MoviesPage() {
     mutationFn: ({ id, open }: { id: string; open: boolean }) =>
       api.post(`/seating/movies/${id}/open-all`, { open }),
     onSuccess: (_d, v) => {
-      toast.success(v.open ? 'Open pool enabled (JCO→Jawan)' : 'Pool restricted to unit quotas');
+      toast.success(v.open ? 'Open pool enabled' : 'Pool restrictions restored');
       qc.invalidateQueries({ queryKey: ['movies'] });
     },
     onError: (e) => toast.error(apiErrorMessage(e)),
@@ -111,7 +111,7 @@ export function MoviesPage() {
             variant="secondary"
             loading={openAll.isPending && openAll.variables?.id === m.id}
             onClick={() => openAll.mutate({ id: m.id, open: !m.openToAll })}
-            title="Release open pool & allow JCO cross-booking"
+            title="Release unbooked seats to general pool"
           >
             {m.openToAll ? 'Restrict pool' : 'Open pool'}
           </Button>
