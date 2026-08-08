@@ -24,11 +24,27 @@ export const getMovie = asyncHandler(async (req: Request, res: Response) => {
 
 export const updateMovie = asyncHandler(async (req: Request, res: Response) => {
   const movie = await svc.updateMovie(req.params.id as string, req.body as UpdateMovieInput);
+  await recordAudit({
+    action: AuditAction.MOVIE_UPDATE,
+    req,
+    // Posters are megabytes of base64 — record that one was set, never the payload.
+    metadata: {
+      movieId: movie.id,
+      changed: { ...(req.body as UpdateMovieInput), poster: undefined },
+    },
+  });
   res.json({ movie });
 });
 
 export const deleteMovie = asyncHandler(async (req: Request, res: Response) => {
-  await svc.deleteMovie(req.params.id as string);
+  const id = req.params.id as string;
+  const doomed = await svc.getMovie(id).catch(() => null);
+  await svc.deleteMovie(id);
+  await recordAudit({
+    action: AuditAction.MOVIE_DELETE,
+    req,
+    metadata: { movieId: id, title: doomed?.title ?? null, startTime: doomed?.startTime ?? null },
+  });
   res.json({ success: true });
 });
 

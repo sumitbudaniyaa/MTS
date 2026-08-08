@@ -271,3 +271,60 @@ describe('auth', () => {
     }
   });
 });
+
+describe('cross-site request forgery on session endpoints', () => {
+  beforeEach(seedUser);
+
+  it('refuses a refresh driven from an origin we do not serve', async () => {
+    const { url, close } = await startApp();
+    try {
+      const login = await fetch(`${url}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mobile: MOBILE, password: PASSWORD, role: Roles.USER }),
+      });
+      const cookie = refreshCookie(login, 'user')!;
+
+      // A malicious page: it cannot read the reply, but without this check the request still
+      // rotated the victim's token, and enough of them trip reuse-detection into a forced logout.
+      const evil = await fetch(`${url}/api/v1/auth/refresh`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json', origin: 'https://evil.example' },
+        body: JSON.stringify({ role: Roles.USER }),
+      });
+      expect(evil.status).toBe(403);
+
+      // Ending someone's session from another site is the exact impact, so logout is covered too.
+      const evilLogout = await fetch(`${url}/api/v1/auth/logout`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json', origin: 'https://evil.example' },
+        body: JSON.stringify({ role: Roles.USER }),
+      });
+      expect(evilLogout.status).toBe(403);
+
+      // The victim's session is untouched: the same cookie still refreshes normally.
+      const ok = await postRefresh(url, cookie, Roles.USER);
+      expect(ok.status).toBe(200);
+    } finally {
+      close();
+    }
+  });
+
+  it('still allows callers that send no Origin at all (curl, health checks)', async () => {
+    const { url, close } = await startApp();
+    try {
+      const login = await fetch(`${url}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mobile: MOBILE, password: PASSWORD, role: Roles.USER }),
+      });
+      const cookie = refreshCookie(login, 'user')!;
+      // No `origin` header — a browser always sets one on a cross-origin POST, so its absence
+      // means this is not the attack, and blocking it would break non-browser clients.
+      const res = await postRefresh(url, cookie, Roles.USER);
+      expect(res.status).toBe(200);
+    } finally {
+      close();
+    }
+  });
+});

@@ -23,10 +23,23 @@ export const getUnit = asyncHandler(async (req: Request, res: Response) => {
 
 export const updateUnit = asyncHandler(async (req: Request, res: Response) => {
   const unit = await unitService.updateUnit(req.params.id as string, req.body as UpdateUnitInput);
+  await recordAudit({
+    action: AuditAction.UNIT_UPDATE,
+    req,
+    metadata: { unitId: unit.id, changed: req.body },
+  });
   res.json({ unit });
 });
 
 export const deleteUnit = asyncHandler(async (req: Request, res: Response) => {
-  await unitService.deleteUnit(req.params.id as string);
+  const id = req.params.id as string;
+  // Read the name before deleting — an id alone tells a later reader nothing.
+  const doomed = await unitService.getUnit(id).catch(() => null);
+  await unitService.deleteUnit(id);
+  await recordAudit({
+    action: AuditAction.UNIT_DELETE,
+    req,
+    metadata: { unitId: id, name: doomed?.name ?? null },
+  });
   res.json({ success: true });
 });

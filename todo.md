@@ -528,3 +528,83 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
 - [x] **Added explicit over-quota booking test.** Unit allocated 1 seat, user familySize 4:
       booking 2 fails 409, booking 1 succeeds, then a second user from the same unit is blocked.
       Confirms the atomic `findOneAndUpdate` guard on `SeatAllocationModel` works correctly.
+- [x] **Two people could book against a one-seat unit allocation.** Reported from the field and
+      reproduced: the quota guard itself was fine, but `rollback` decremented the unit's `booked`
+      counter whenever the source was `UNIT_QUOTA` — *including when the guard had rejected the
+      booking and incremented nothing*. So a failed attempt refunded the seat a different,
+      successful booking was holding (`booked` went 1 → 0), and the rejected user simply tried
+      again and got in. It also explained "the allocation quota does not update": every failed
+      attempt reset it. Rollback now refunds exactly what the attempt consumed (`quotaTaken` /
+      `poolTaken`), which also closed the mirror-image leak on the pool path — `poolSeats` was
+      decremented and never refunded on failure, losing seats permanently. Regression test covers
+      the retry, which is the step that actually let the second person in.
+- [x] **The seat cap now respects unit quota, not just family size.** A family of four whose unit
+      had one seat left was shown `0/4`, allowed to hold four seats (blocking three that were
+      never theirs), then refused at Confirm with "no remaining seats" — wrong, since one *was*
+      free — and left to guess their way down to one. `seatAllowance()` is now the single answer
+      for the picker's counter, the hold check and the Confirm error, returning the lesser of
+      family room and unit quota, so the picker shows `0/1` and never offers a doomed pick.
+      Quota is checked at hold time too, and the errors state the real number
+      ("Your unit allows 1 seat(s) for this show") rather than a flat refusal. Members of a unit
+      whose allocation is spent get an explicit **"No seats left for your unit"** panel in place
+      of the map. Caught while testing: `holdSeats` selected `rank familySize` without `unit`, so
+      the new check read every user as unit-less and refused every hold. **48/48 tests, all four
+      apps build.**
+- [x] **Open-pool release locked out any movie whose allocation was skipped.** Found while
+      auditing what the release actually does. `poolSeats` is credited from *unused quota*, but
+      it also becomes the ONLY gate once the status flips to `POOL_RELEASED` — so a movie with
+      no allocations released 0 into the pool and every booking was then refused with "No seats
+      left in the common pool", while the seat map cheerfully showed four free seats and the
+      picker said you could take two. Allocation is optional by design ("Skip for now"), so this
+      hit an ordinary setup: any unallocated movie marked open-to-all became unbookable the
+      moment it started. The release now credits the seats that are genuinely free when there
+      were no allocations, since that movie's whole inventory was already common. **49/49 tests.**
+- [x] **"Open to all" now takes effect immediately, not at showtime.** It already lifted rank
+      gating on click (JCO → Jawan), but **unit quota kept biting until the showtime pool
+      release** — so a unit that had used up its allocation stayed locked out for the hours in
+      between, on a movie the admin had explicitly thrown open. Quota now dissolves the moment
+      the flag is set: `seatAllowance` reports `unitRemaining: null` and bookings take the
+      `OPEN_POOL` path straight away, leaving the unit's counter untouched. The showtime release
+      still runs and still moves leftover quota into the pool for reporting.
+      This reverses the earlier "release at showtime only" decision for the *quota* half — the
+      release itself is still showtime, but it is no longer what makes the movie open.
+- [x] **`poolSeats` no longer gates bookings.** Making the button immediate exposed the same
+      trap a third time: the counter is only credited at release, so booking from the pool
+      before one would have been refused for lack of stock. Seats are already claimed atomically
+      (`FREE -> BOOKED`), which is what actually prevents overselling — the counter added no
+      safety and two outages. It is now decremented for reporting, floored at zero, and never
+      blocks; only what was genuinely decremented is refunded on failure. **51/51 tests.**
+- [x] **Security audit pass.** Checked route auth coverage (every router does
+      `use(authenticate)`, every route an `authorize`), IDOR (bookings scope to
+      `{_id, user: userId}` — clean), field exposure (`passwordHash`/`tokenHash`/blind indexes
+      are `select:false` *and* stripped in `toJSON`), secret handling (`.env` untracked; no
+      secret reachable in any built bundle — verified by grepping `dist/`), input validation
+      (Zod on every route; poster restricted to png/jpeg/webp/gif data URLs or http(s) — SVG
+      correctly excluded), ticket-code entropy (32^14 ≈ 2^70, unique index), rate limiting, and
+      the hardening pipeline (helmet → CORS whitelist → mongo-sanitize → 8 MB body cap).
+      Four findings, recorded in `architecture.md` §3.5.2: **no audit entries for deletions or
+      privilege changes** (the significant one), a **CSRF-able `/auth/refresh`** that the new
+      Vercel proxy now lets us close by moving to `SameSite=lax`, **dependency CVEs** (incl.
+      `xlsx` critical with no upstream fix), and **no MFA / no lockout**.
+- [x] **Audit findings fixed** (see `architecture.md` §3.5.2).
+      - **Audit trail extended from 10 to 24 recorded actions.** It logged creates but no
+        deletions and no privilege changes, so "who made this person an admin" and "who deleted
+        this unit" had no answer. Added `ADMIN_CREATE/UPDATE/DELETE`, `PASSWORD_CHANGE`,
+        `PASSWORD_RESET`, `MOVIE_UPDATE/DELETE/OPEN_TO_ALL`, `UNIT_UPDATE/DELETE`,
+        `PERSONNEL_UPDATE/DELETE`, `AUDITORIUM_UPDATE`, `SEAT_ALLOCATION_SET`. Delete handlers
+        capture the target's name/tier *before* removing it; metadata never carries a password
+        (just `passwordReset: true`) or a megabyte of base64 poster.
+      - **CSRF on the session endpoints closed.** `/auth/refresh` and `/auth/logout` authenticate
+        by cookie alone and accept a bodyless POST; with `SameSite=None` in cross-site production
+        any page could fire a credentialed request. It was never account takeover (CORS blocks
+        reading the reply) but it rotated the victim's token, and repeated calls trip
+        reuse-detection into a forced logout. Both now require the Origin to be in
+        `CORS_ORIGINS`, while still allowing a *missing* Origin so curl and health checks work —
+        a browser always sets one on a cross-origin POST. Two tests cover both directions.
+      - **Dependency CVEs:** cleared `jspdf` (critical), `jspdf-autotable`, `dompurify`,
+        `nanoid`, `socket.io-parser`, `body-parser`, and **`xlsx`** — the last has no npm fix, so
+        it is pinned to SheetJS's own CDN tarball per their documented remediation. Two moderates
+        remain, both needing a major upgrade: `node-cron@3`→4 and `react-router@6`→7.
+      - Gotcha worth remembering: `npm audit fix --omit=dev` **prunes devDependencies**, which
+        deleted TypeScript and broke `npm run typecheck` until `npm install` restored it.
+      **53/53 tests, all four apps build.**

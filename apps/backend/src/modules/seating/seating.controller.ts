@@ -1,7 +1,8 @@
 import type { Request, Response } from 'express';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { ApiError } from '../../utils/apiError.js';
-import type { RankType } from '../../constants/enums.js';
+import { AuditAction, type RankType } from '../../constants/enums.js';
+import { recordAudit } from '../audit/audit.service.js';
 import * as svc from './seating.service.js';
 import type { BookSeatsInput, SaveAuditoriumInput } from './seating.schema.js';
 
@@ -12,6 +13,16 @@ export const getAuditorium = asyncHandler(async (_req: Request, res: Response) =
 
 export const saveAuditorium = asyncHandler(async (req: Request, res: Response) => {
   const auditorium = await svc.saveAuditorium(req.body as SaveAuditoriumInput);
+  // The layout decides every movie's capacity and rank gating, so a change is worth recording —
+  // by shape, not by dumping the whole row array into the log.
+  await recordAudit({
+    action: AuditAction.AUDITORIUM_UPDATE,
+    req,
+    metadata: {
+      rows: auditorium.rows.length,
+      seats: auditorium.rows.reduce((n, r) => n + r.seats.length, 0),
+    },
+  });
   res.json({ auditorium });
 });
 
@@ -23,6 +34,13 @@ export const generateSeats = asyncHandler(async (req: Request, res: Response) =>
 export const setOpenToAll = asyncHandler(async (req: Request, res: Response) => {
   const open = Boolean((req.body as { open?: boolean }).open);
   const result = await svc.setMovieOpenToAll(req.params.movieId as string, open);
+  // This dissolves unit quota and widens rank access for a whole show — exactly the kind of
+  // discretionary call someone will later want attributed.
+  await recordAudit({
+    action: AuditAction.MOVIE_OPEN_TO_ALL,
+    req,
+    metadata: { movieId: req.params.movieId, openToAll: result },
+  });
   res.json({ openToAll: result });
 });
 

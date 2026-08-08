@@ -86,7 +86,8 @@ export async function reclaimUnclaimedSeats(now: Date = new Date()): Promise<num
               await SeatAllocationModel.updateOne(
                 { movie: _id, unit: booking.unit, booked: { $gte: changed } },
                 { $inc: { booked: -changed } },
-                { session: session ?? null },
+                // updateOne's options take `undefined`, not `null`, for "no session".
+                { session: session ?? undefined },
               );
             }
           }

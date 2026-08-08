@@ -149,7 +149,29 @@ export const loginController = asyncHandler(async (req: Request, res: Response) 
   res.json({ accessToken: result.accessToken, user: result.user });
 });
 
+/**
+ * Refuse a refresh driven from a page we don't serve.
+ *
+ * `/auth/refresh` authenticates purely by cookie and accepts a bodyless POST, and in cross-site
+ * production the cookie is `SameSite=None` — so any page could fire a credentialed request at
+ * it. CORS stops the attacker *reading* the new token, so this was never account takeover, but
+ * the call still rotated the victim's token; repeated, it trips reuse-detection and forces a
+ * logout. Checking `Origin` against the CORS whitelist costs nothing and closes it now, without
+ * waiting on the `SameSite=lax` change that same-origin proxying will eventually allow.
+ *
+ * A missing `Origin` is allowed through: non-browser callers (curl, health checks, the mobile
+ * shell) send none, and they are not the threat — the attack needs a browser to attach the
+ * cookie, and browsers always set `Origin` on a cross-origin POST.
+ */
+function assertTrustedOrigin(req: Request): void {
+  const origin = req.get('origin');
+  if (!origin) return;
+  if (env.CORS_ORIGINS.includes(origin)) return;
+  throw ApiError.forbidden('Origin not allowed');
+}
+
 export const refreshController = asyncHandler(async (req: Request, res: Response) => {
+  assertTrustedOrigin(req);
   const cookies = (req.cookies ?? {}) as Record<string, string | undefined>;
   const { role: audienceRole } = (req.body ?? {}) as RefreshInput;
 
@@ -180,6 +202,8 @@ export const refreshController = asyncHandler(async (req: Request, res: Response
 });
 
 export const logoutController = asyncHandler(async (req: Request, res: Response) => {
+  // Same reasoning as refresh: a cross-site page must not be able to end someone's session.
+  assertTrustedOrigin(req);
   const cookies = (req.cookies ?? {}) as Record<string, string | undefined>;
   // The access token may already have expired, so fall back to the audience the app declares.
   const role = req.principal?.role ?? (req.body as RefreshInput | undefined)?.role;
@@ -202,5 +226,6 @@ export const changePasswordController = asyncHandler(async (req: Request, res: R
   if (!req.principal) throw ApiError.unauthorized();
   const { currentPassword, newPassword } = req.body as ChangePasswordInput;
   await changePassword(req.principal.sub, req.principal.role, currentPassword, newPassword);
+  await recordAudit({ action: AuditAction.PASSWORD_CHANGE, req });
   res.json({ success: true });
 });

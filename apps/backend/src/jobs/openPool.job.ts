@@ -1,6 +1,6 @@
 import { runInTransaction } from '../utils/transaction.js';
-import { MovieModel, SeatAllocationModel } from '../models/index.js';
-import { MovieStatus } from '../constants/enums.js';
+import { MovieModel, MovieSeatModel, SeatAllocationModel } from '../models/index.js';
+import { MovieStatus, SeatStatus } from '../constants/enums.js';
 import { logger } from '../config/logger.js';
 import { broadcastMovie } from '../realtime/gateway.js';
 
@@ -47,6 +47,18 @@ export async function releaseOpenPool(now: Date = new Date()): Promise<number> {
             await a.save({ session: session ?? null });
             unused += free;
           }
+        }
+
+        // A movie whose allocation was skipped has no quota to release, so `unused` is 0 — and
+        // because `poolSeats` becomes the ONLY gate once the status flips, crediting 0 locked
+        // the movie completely: the map showed free seats and every booking was refused with
+        // "No seats left in the common pool". Its whole inventory was already common, so the
+        // seats that are actually free are what belongs in the pool.
+        if (allocations.length === 0) {
+          unused = await MovieSeatModel.countDocuments({
+            movie: _id,
+            status: SeatStatus.FREE,
+          }).session(session ?? null);
         }
 
         movie.poolSeats += unused;

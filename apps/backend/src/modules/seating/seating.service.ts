@@ -17,7 +17,16 @@ import { ApiError } from '../../utils/apiError.js';
 import { generateTicketCode } from '../../utils/ids.js';
 import { recordAudit } from '../audit/audit.service.js';
 import { broadcastMovie, broadcastMovieRules, broadcastSeats } from '../../realtime/gateway.js';
-import { AuditAction, BookingSource, MovieStatus, Rank, SeatStatus, TicketStatus, type RankType } from '../../constants/enums.js';
+import {
+  AuditAction,
+  BookingSource,
+  MovieStatus,
+  Rank,
+  SeatStatus,
+  TicketStatus,
+  type BookingSourceType,
+  type RankType,
+} from '../../constants/enums.js';
 import { Roles } from '../../types/index.js';
 import { settings } from '../../config/settings.js';
 
@@ -132,7 +141,14 @@ export async function getMovieSeatMap(
   seats: SeatView[];
   openToAll: boolean;
   /** Absent for an anonymous viewer — there is no personal limit to report. */
-  allowance?: { familySize: number; booked: number; canSelect: number };
+  allowance?: {
+    familySize: number;
+    booked: number;
+    /** Seats they may actually pick: the lesser of family room and unit quota. */
+    canSelect: number;
+    /** Unit's remaining quota, or null when quota does not apply to this movie. */
+    unitRemaining: number | null;
+  };
 }> {
   const movie = await MovieModel.findById(movieId).select('openToAll');
   const openToAll = Boolean(movie?.openToAll);
@@ -153,17 +169,26 @@ export async function getMovieSeatMap(
   });
   // Ship the personal cap with the map so the picker can show "2/4 selected" and stop the
   // selection at the limit, instead of letting someone pick freely and fail on Confirm.
-  let allowance: { familySize: number; booked: number; canSelect: number } | undefined;
+  let allowance:
+    | { familySize: number; booked: number; canSelect: number; unitRemaining: number | null }
+    | undefined;
   if (userId) {
-    const user = await UserModel.findById(userId).select('familySize');
+    const user = await UserModel.findById(userId).select('familySize unit');
     if (user) {
-      const a = await seatAllowance(userId, movieId, user.familySize);
-      // `canSelect` counts current holds as selectable, because they ARE the selection the
-      // picker is about to display — only issued tickets are permanently spent.
+      const a = await seatAllowance(
+        userId,
+        movieId,
+        user.familySize,
+        user.unit ? String(user.unit) : null,
+      );
+      // Seats they are already holding ARE the selection the picker is about to draw, so they
+      // count as selectable — `a.remaining` has them subtracted, so add them back.
+      const held = a.heldLabels.length;
       allowance = {
         familySize: a.familySize,
         booked: a.booked,
-        canSelect: Math.max(0, a.familySize - a.booked),
+        canSelect: a.remaining + held,
+        unitRemaining: a.unitRemaining === null ? null : a.unitRemaining + held,
       };
     }
   }
@@ -302,33 +327,73 @@ export interface SeatAllowance {
   booked: number;
   /** Seats they are holding right now — the live selection. */
   heldLabels: string[];
-  /** How many more seats they may still take. */
+  /** How many more seats they may still take, family limit AND unit quota considered. */
   remaining: number;
+  /**
+   * Seats their unit has left, or `null` when the unit quota does not apply to this movie
+   * (no allocations were made, or the pool has been released and quota is dissolved).
+   */
+  unitRemaining: number | null;
 }
 
 /**
- * What one person may still take for one movie.
+ * What one person may still take for one movie — the single answer the picker's cap, the hold
+ * check and the Confirm error all read, so they can never tell the user different numbers.
  *
- * Seats already *held* count against the limit as much as tickets already *booked* — a hold is
- * a seat nobody else can have, so leaving them out would let someone tie up the auditorium a
- * hold at a time. Returned to the seat map so the picker can stop the selection at the cap
- * rather than letting it fail on Confirm.
+ * TWO limits apply and the smaller wins:
+ *  - their **family size**, minus tickets already issued and seats already held. Holds count as
+ *    much as tickets: a hold is a seat nobody else can have, so ignoring them would let someone
+ *    tie up the auditorium a hold at a time.
+ *  - their **unit's remaining quota**, when the movie is on unit quota at all. A family of four
+ *    facing a unit with one seat left can take exactly one — previously the cap said four, they
+ *    held four, and Confirm then failed with "no remaining seats" while one was in fact free.
+ *
+ * `unitRemaining` is `null` when quota does not apply: no allocations were made for the movie
+ * (everything sits in the common pool), or the pool has been released and quota is dissolved.
  */
 export async function seatAllowance(
   userId: string,
   movieId: string,
   familySize: number,
+  unitId?: string | null,
 ): Promise<SeatAllowance> {
-  const [booked, heldSeats] = await Promise.all([
+  const [booked, heldSeats, movie, allocCount] = await Promise.all([
     heldTicketCount(userId, movieId),
     MovieSeatModel.find({ movie: movieId, heldBy: userId, status: SeatStatus.HELD }).select('label'),
+    MovieModel.findById(movieId).select('status openToAll'),
+    SeatAllocationModel.countDocuments({ movie: movieId }),
   ]);
   const heldLabels = heldSeats.map((s) => s.label);
+  const familyRemaining = Math.max(0, familySize - booked - heldLabels.length);
+
+  // Quota only bites while the movie is actually running on it. "Open to all" dissolves it
+  // IMMEDIATELY — the whole point of the button is that anyone can book right away, so waiting
+  // for the showtime pool release would leave units locked out for the hours in between.
+  const quotaApplies =
+    allocCount > 0 && !movie?.openToAll && movie?.status !== MovieStatus.POOL_RELEASED;
+  let unitRemaining: number | null = null;
+  if (quotaApplies) {
+    if (!unitId) {
+      // Allocations exist but this person has no unit — they have no quota to draw from.
+      unitRemaining = 0;
+    } else {
+      const alloc = await SeatAllocationModel.findOne({ movie: movieId, unit: unitId }).select(
+        'allocated booked',
+      );
+      // Seats this person is holding are already counted in the unit's `booked`? No — `booked`
+      // only moves on a completed booking, so their live holds must be subtracted here too, or
+      // the cap would let them re-select seats the unit cannot actually pay for.
+      const unitFree = alloc ? Math.max(0, alloc.allocated - alloc.booked) : 0;
+      unitRemaining = Math.max(0, unitFree - heldLabels.length);
+    }
+  }
+
   return {
     familySize,
     booked,
     heldLabels,
-    remaining: Math.max(0, familySize - booked - heldLabels.length),
+    unitRemaining,
+    remaining: unitRemaining === null ? familyRemaining : Math.min(familyRemaining, unitRemaining),
   };
 }
 
@@ -350,21 +415,43 @@ export async function holdSeats(
 ): Promise<{ held: string[] }> {
   const movie = await assertBookableMovie(movieId);
   const openToAll = Boolean(movie.openToAll);
-  const user = await UserModel.findById(userId).select('rank familySize');
+  // `unit` matters as much as `familySize` here — omitting it made the quota check believe the
+  // user had no unit, which reads as "no quota at all" and refused every hold.
+  const user = await UserModel.findById(userId).select('rank familySize unit');
   if (!user) throw ApiError.unauthorized();
   const rank = (user.rank as RankType) ?? null;
 
-  // Enforce the family limit at HOLD time, not just at book time. Holding was previously
-  // unlimited: a user could tie up any number of seats for the hold window and only discover
-  // the cap when they pressed Confirm — meanwhile nobody else could take those seats.
-  const allowance = await seatAllowance(userId, movieId, user.familySize);
+  // Enforce BOTH limits at HOLD time, not just at book time. Holding was previously unlimited:
+  // a user could tie up any number of seats for the hold window — seats their unit did not even
+  // have — and only discover the cap when they pressed Confirm.
+  const allowance = await seatAllowance(
+    userId,
+    movieId,
+    user.familySize,
+    user.unit ? String(user.unit) : null,
+  );
   const mineAlready = new Set(allowance.heldLabels);
   const wanted = labels.filter((l) => !mineAlready.has(l)).length;
   if (wanted > allowance.remaining) {
-    throw ApiError.badRequest(
-      `You may hold at most ${user.familySize} seat(s) for this movie`,
-      { familySize: user.familySize, booked: allowance.booked, remaining: allowance.remaining },
-    );
+    // Say the number they may hold IN TOTAL, not the number still free — otherwise someone
+    // holding their unit's last seat is told "no seats left for your unit", which is both
+    // confusing and useless. "No seats left" is reserved for the case where they hold none.
+    const held = allowance.heldLabels.length;
+    const total = allowance.remaining + held;
+    const familyRoom = Math.max(0, user.familySize - allowance.booked);
+    const unitIsTheLimit = allowance.unitRemaining !== null && total < familyRoom;
+    const message =
+      total === 0
+        ? 'No seats left for your unit for this movie'
+        : unitIsTheLimit
+          ? `Your unit allows ${total} seat(s) for this show`
+          : `You may book at most ${familyRoom} seat(s) for this movie`;
+    throw ApiError.badRequest(message, {
+      familySize: user.familySize,
+      booked: allowance.booked,
+      remaining: allowance.remaining,
+      unitRemaining: allowance.unitRemaining,
+    });
   }
 
   const expires = new Date(Date.now() + settings().seatHoldSeconds * 1_000);
@@ -507,7 +594,10 @@ export async function bookSeats(args: {
   // Check if per-unit seat allocations exist for this movie.
   const allocCount = await SeatAllocationModel.countDocuments({ movie: movie._id });
   const hasAllocations = allocCount > 0;
-  const pooled = movie.status === MovieStatus.POOL_RELEASED;
+  // "Open to all" counts as pooled from the instant it is set, even before the showtime
+  // release — otherwise the button would lift rank gating immediately but leave unit quota
+  // biting until the show started, which is not what "open to all" means to anyone.
+  const pooled = movie.status === MovieStatus.POOL_RELEASED || Boolean(movie.openToAll);
   const unitId = user.unit ? String(user.unit) : null;
 
   const source: BookingSourceType = pooled
@@ -515,6 +605,12 @@ export async function bookSeats(args: {
     : hasAllocations
       ? BookingSource.UNIT_QUOTA
       : BookingSource.OPEN_POOL;
+
+  // What THIS attempt actually consumed. The rollback must give back exactly this and no more:
+  // decrementing the unit quota unconditionally handed back a seat that a *different*,
+  // successful booking was holding, which let a second person book against a 1-seat allocation.
+  let quotaTaken = 0;
+  let poolTaken = 0;
 
   let bookingId: string;
   try {
@@ -534,18 +630,36 @@ export async function bookSeats(args: {
       );
       if (!alloc) {
         await rollback(userId, movieId, claimed);
-        throw ApiError.conflict('Your unit has no remaining seats for this movie');
+        // Report the real figure. A flat "no remaining seats" was wrong whenever *some* were
+        // left but fewer than asked for, and sent people away instead of back to pick fewer.
+        const current = await SeatAllocationModel.findOne({ movie: movie._id, unit: unitId }).select(
+          'allocated booked',
+        );
+        const left = current ? Math.max(0, current.allocated - current.booked) : 0;
+        throw ApiError.conflict(
+          left === 0
+            ? 'No seats left for your unit for this movie'
+            : `Your unit has only ${left} seat(s) left for this movie`,
+          { unitRemaining: left, requested: labels.length },
+        );
       }
+      quotaTaken = labels.length;
     } else if (pooled) {
+      // `poolSeats` is a COUNTER, not the inventory. The seats themselves were already claimed
+      // atomically above (FREE -> BOOKED), which is what actually prevents overselling, so
+      // gating on the counter too added no safety and plenty of failure: a counter that had
+      // drifted low — or was never credited, as on a movie whose allocation was skipped —
+      // refused bookings for seats that were plainly free. It is now decremented for reporting
+      // and floored at zero, and never blocks.
       const m = await MovieModel.findOneAndUpdate(
         { _id: movie._id, $expr: { $gte: ['$poolSeats', labels.length] } },
         { $inc: { poolSeats: -labels.length } },
         { new: true },
       );
-      if (!m) {
-        await rollback(userId, movieId, claimed);
-        throw ApiError.conflict('No seats left in the common pool');
-      }
+      // Only what was actually decremented may be refunded on failure — `m` is null when the
+      // counter was too low to take from, and claiming otherwise would credit back seats this
+      // attempt never took.
+      poolTaken = m ? labels.length : 0;
     }
 
     const [booking] = await BookingModel.create([
@@ -573,7 +687,7 @@ export async function bookSeats(args: {
     // needs to see this without a reload.
     if (after) broadcastMovie(movie.id, { seatsBooked: after.seatsBooked });
   } catch (err) {
-    await rollback(userId, movieId, claimed, unitId, source);
+    await rollback(userId, movieId, claimed, { unitId, quotaTaken, poolTaken });
     if (typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000) {
       const existing = await BookingModel.findOne({ user: userId, idempotencyKey });
       if (existing) {
@@ -597,23 +711,40 @@ export async function bookSeats(args: {
   return Object.assign(seats, { bookingId });
 }
 
+/**
+ * Undo a partial booking.
+ *
+ * `taken` is what THIS attempt actually consumed, not what it intended to. The counters are
+ * shared across users, so refunding on intent is a correctness bug in both directions:
+ *  - the unit quota used to be decremented whenever the source was UNIT_QUOTA, including when
+ *    the atomic guard had *rejected* the booking and never incremented anything — so a failed
+ *    attempt handed back the seat a different, successful booking was holding, and a retry then
+ *    sailed through. Two people ended up booked against a one-seat allocation.
+ *  - the common pool was never refunded at all, so a booking that failed after claiming pool
+ *    seats leaked them permanently.
+ */
 async function rollback(
   userId: string,
   movieId: string,
   labels: string[],
-  unitId?: string | null,
-  source?: BookingSourceType,
+  taken?: { unitId?: string | null; quotaTaken?: number; poolTaken?: number },
 ): Promise<void> {
-  if (labels.length === 0) return;
-  await MovieSeatModel.updateMany(
-    { movie: movieId, label: { $in: labels }, bookedBy: userId, status: SeatStatus.BOOKED },
-    { $set: { status: SeatStatus.FREE, bookedBy: null, ticketCode: null, booking: null } },
-  );
-  if (source === BookingSource.UNIT_QUOTA && unitId) {
-    await SeatAllocationModel.updateOne(
-      { movie: movieId, unit: unitId, booked: { $gte: labels.length } },
-      { $inc: { booked: -labels.length } },
+  if (labels.length > 0) {
+    await MovieSeatModel.updateMany(
+      { movie: movieId, label: { $in: labels }, bookedBy: userId, status: SeatStatus.BOOKED },
+      { $set: { status: SeatStatus.FREE, bookedBy: null, ticketCode: null, booking: null } },
     );
+  }
+  const quota = taken?.quotaTaken ?? 0;
+  if (quota > 0 && taken?.unitId) {
+    await SeatAllocationModel.updateOne(
+      { movie: movieId, unit: taken.unitId, booked: { $gte: quota } },
+      { $inc: { booked: -quota } },
+    );
+  }
+  const pool = taken?.poolTaken ?? 0;
+  if (pool > 0) {
+    await MovieModel.updateOne({ _id: movieId }, { $inc: { poolSeats: pool } });
   }
 }
 

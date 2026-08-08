@@ -67,6 +67,17 @@ export const updatePersonnel = asyncHandler(async (req: Request, res: Response) 
   const existing = await svc.getPersonnel(req.params.id as string);
   assertCanManage(req.principal?.role, existing.role as Role);
   const user = await svc.updatePersonnel(req.params.id as string, req.body as UpdatePersonnelInput);
+  const body = req.body as UpdatePersonnelInput & { password?: string };
+  await recordAudit({
+    action: body.password ? AuditAction.PASSWORD_RESET : AuditAction.PERSONNEL_UPDATE,
+    req,
+    metadata: {
+      personnelId: user.id,
+      targetRole: existing.role,
+      // Never the password itself — only that one was set.
+      changed: { ...body, password: body.password ? true : undefined },
+    },
+  });
   res.json({ personnel: svc.toPersonnelView(user) });
 });
 
@@ -74,5 +85,10 @@ export const deletePersonnel = asyncHandler(async (req: Request, res: Response) 
   const existing = await svc.getPersonnel(req.params.id as string);
   assertCanManage(req.principal?.role, existing.role as Role);
   await svc.deletePersonnel(req.params.id as string);
+  await recordAudit({
+    action: AuditAction.PERSONNEL_DELETE,
+    req,
+    metadata: { personnelId: req.params.id, targetRole: existing.role, mobile: existing.mobile },
+  });
   res.json({ success: true });
 });

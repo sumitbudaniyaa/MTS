@@ -24,8 +24,16 @@ interface SeatView {
 interface SeatMap {
   rows: string[];
   seats: SeatView[];
-  /** How many seats this person may hold for this movie — the server's family-size cap. */
-  allowance?: { familySize: number; booked: number; canSelect: number };
+  /**
+   * What this person may actually pick: the lesser of their family room and their unit's
+   * remaining quota. `unitRemaining` is null when unit quota doesn't apply to this movie.
+   */
+  allowance?: {
+    familySize: number;
+    booked: number;
+    canSelect: number;
+    unitRemaining: number | null;
+  };
 }
 
 const HOLD_SECONDS = 120;
@@ -137,10 +145,13 @@ export function SeatPickerPage() {
     });
   }, [data]);
 
-  // Seats this person may pick in total. Tickets already issued to them for this movie are
-  // spent, so the cap shrinks accordingly.
+  // Seats this person may pick in total — already reduced by tickets they hold and by whatever
+  // their unit has left, so the picker never offers a seat that Confirm would refuse.
   const maxSelectable = data?.allowance?.canSelect ?? Infinity;
   const atLimit = selected.length >= maxSelectable;
+  // Their unit's allocation is spent. There is nothing to pick, so say so plainly rather than
+  // presenting a map where every tap is silently rejected.
+  const unitExhausted = data?.allowance?.unitRemaining === 0 && selected.length === 0;
 
   const statusOf = (s: SeatView): Status => live[s.label] ?? s.status;
 
@@ -151,8 +162,13 @@ export function SeatPickerPage() {
     const isSelected = selected.includes(seat.label);
     // Stop at the family limit rather than letting the hold fail. Deselecting is always fine.
     if (!isSelected && atLimit) {
+      const unitLeft = data?.allowance?.unitRemaining;
       toast.warning(
-        `You can book ${maxSelectable} seat${maxSelectable === 1 ? '' : 's'} for this movie`,
+        unitLeft === 0
+          ? 'No seats left for your unit for this movie'
+          : unitLeft != null && unitLeft <= maxSelectable
+            ? `Your unit has ${unitLeft} seat${unitLeft === 1 ? '' : 's'} left for this movie`
+            : `You can book ${maxSelectable} seat${maxSelectable === 1 ? '' : 's'} for this movie`,
       );
       return;
     }
@@ -327,7 +343,17 @@ export function SeatPickerPage() {
             </p>
           )}
 
-          {data && data.seats.length > 0 && (
+          {unitExhausted && (
+            <div className="mx-auto max-w-sm rounded-2xl border border-warning/30 bg-warning/10 px-5 py-6 text-center">
+              <p className="text-sm font-semibold text-fg">No seats left for your unit</p>
+              <p className="mt-1 text-xs text-muted">
+                Your unit&rsquo;s allocation for this show is fully booked. Seats may open up if
+                someone cancels, or once unclaimed seats are released after the show starts.
+              </p>
+            </div>
+          )}
+
+          {data && data.seats.length > 0 && !unitExhausted && (
             <>
               {/* Screen + rows share one centred block so the screen spans exactly the seat
                   area and scrolls with it when the layout is zoomed in past the viewport. */}
@@ -418,7 +444,7 @@ export function SeatPickerPage() {
           )}
         </div>
 
-        {data && data.seats.length > 0 && (
+        {data && data.seats.length > 0 && !unitExhausted && (
           <div className="pointer-events-none absolute bottom-3 right-3 flex flex-col items-center overflow-hidden rounded-full border border-border bg-surface/95 shadow-lg backdrop-blur">
             <ZoomButton label="Zoom in" onClick={() => setZoom((z) => clampZoom(z + 0.2))}>
               <Plus className="h-4 w-4" />
@@ -444,9 +470,11 @@ export function SeatPickerPage() {
           <span className="text-muted">
             {selected.length > 0
               ? `${selected.length} seat(s): ${selected.join(', ')}`
-              : Number.isFinite(maxSelectable)
-                ? `Pick up to ${maxSelectable} seat${maxSelectable === 1 ? '' : 's'}`
-                : 'No seats selected'}
+              : unitExhausted
+                ? 'Your unit has no seats left'
+                : Number.isFinite(maxSelectable)
+                  ? `Pick up to ${maxSelectable} seat${maxSelectable === 1 ? '' : 's'}`
+                  : 'No seats selected'}
           </span>
         </div>
         <Button className="w-full" disabled={selected.length === 0} loading={booking} onClick={confirm}>

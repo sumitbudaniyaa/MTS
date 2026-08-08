@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   AdminModel,
+  AuditoriumModel,
   BookingModel,
   MovieModel,
   ScannerModel,
@@ -12,12 +13,13 @@ import { releaseOpenPool } from '../src/jobs/openPool.job.js';
 import { openBookingWindow } from '../src/jobs/openBooking.job.js';
 import { reclaimUnclaimedSeats } from '../src/jobs/reclaim.job.js';
 import { setAllocations } from '../src/modules/seats/seat.service.js';
+import { bookSeats, generateMovieSeats } from '../src/modules/seating/seating.service.js';
 import { deleteMovie } from '../src/modules/movies/movie.service.js';
 import { settings } from '../src/config/settings.js';
 import { verifyTicket } from '../src/modules/attendance/attendance.service.js';
 import { generateTicketCode } from '../src/utils/ids.js';
 import { hashPassword } from '../src/utils/password.js';
-import { BookingSource, MovieStatus, TicketStatus } from '../src/constants/enums.js';
+import { BookingSource, MovieStatus, Rank, TicketStatus } from '../src/constants/enums.js';
 import { Roles } from '../src/types/index.js';
 
 describe('open-pool release (M6)', () => {
@@ -420,5 +422,50 @@ describe('admin ticket verification', () => {
     const ticket = after!.tickets[0]!;
     expect(String(ticket.checkedInBy)).toBe(admin.id);
     expect(ticket.checkedInByModel).toBe('Admin');
+  });
+});
+
+describe('open-pool release with no allocations', () => {
+  it('credits the seats that are actually free, so the movie stays bookable', async () => {
+    await AuditoriumModel.create({
+      name: 'NoAlloc',
+      rows: [{ label: 'A', seats: [1, 2, 3, 4].map((n) => ({ number: n, allowedRanks: [] })) }],
+    });
+    const unit = await UnitModel.create({ name: 'Solo' });
+    const startTime = new Date(Date.now() - 60_000); // already started
+    const movie = await MovieModel.create({
+      title: 'NoAlloc',
+      showDate: startTime,
+      startTime,
+      totalSeats: 4,
+      status: MovieStatus.SCHEDULED,
+      openToAll: true,
+    });
+    await generateMovieSeats(movie.id);
+    // Allocation deliberately skipped — the whole auditorium is already common.
+
+    expect(await releaseOpenPool(new Date())).toBe(1);
+    const after = await MovieModel.findById(movie._id);
+    expect(after?.status).toBe(MovieStatus.POOL_RELEASED);
+    // Previously 0, which made `poolSeats` a gate that refused every booking on a movie whose
+    // seats were all free.
+    expect(after?.poolSeats).toBe(4);
+
+    const user = await UserModel.create({
+      mobile: '9000000092',
+      passwordHash: await hashPassword('Pass123'),
+      role: Roles.USER,
+      unit: unit._id,
+      rank: Rank.JAWAN,
+      numberOfKids: 1,
+    });
+    const seats = await bookSeats({
+      userId: user.id,
+      movieId: movie.id,
+      labels: ['A1'],
+      idempotencyKey: 'noalloc-1',
+    });
+    expect(seats.length).toBe(1);
+    expect((await MovieModel.findById(movie._id))?.poolSeats).toBe(3);
   });
 });

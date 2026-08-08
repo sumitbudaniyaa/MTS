@@ -190,6 +190,38 @@ get **two different apps**, not one app with buttons hidden (see §4.2):
 - **Passwords**: new passwords require ≥ 8 chars (login still accepts existing 6-char ones);
   bcrypt(12); stored `select:false`; access tokens live only in memory on the client.
 
+### 3.5.2 Audit findings & remediation (2026-08-08)
+
+Reviewed: route auth coverage, IDOR, field exposure, secret handling, input validation, rate
+limiting, dependency CVEs. Clean on all but the items below, all now **fixed** except where noted.
+
+- **Audit trail now covers deletions and privilege changes.** `AuditAction` previously logged
+  logins, creates, bookings, ticket verification and settings — so "who granted this person
+  admin" and "who deleted this unit" were unanswerable, which is what an append-only trail
+  exists for. Added and wired: `ADMIN_CREATE/UPDATE/DELETE`, `PASSWORD_CHANGE`, `PASSWORD_RESET`,
+  `MOVIE_UPDATE/DELETE/OPEN_TO_ALL`, `UNIT_UPDATE/DELETE`, `PERSONNEL_UPDATE/DELETE`,
+  `AUDITORIUM_UPDATE`, `SEAT_ALLOCATION_SET` — 24 actions recorded in total. Delete handlers read
+  the target's name/title/tier **before** removing it, since an id alone tells a later reader
+  nothing. Metadata never carries a password (only `passwordReset: true`) or a poster payload.
+- **`POST /auth/refresh` and `/auth/logout` now check `Origin`.** Both authenticate purely by
+  cookie and accept a bodyless POST, and in cross-site production the cookie is `SameSite=None` —
+  so any page could fire a credentialed request. CORS stopped the attacker *reading* the new
+  token (never account takeover), but the call still rotated the victim's token, and repeated
+  calls trip reuse-detection into a forced logout. The Origin must now be in `CORS_ORIGINS`.
+  A **missing** Origin is allowed: non-browser callers send none, and the attack needs a browser
+  to attach the cookie — browsers always set Origin on a cross-origin POST.
+- **Dependency CVEs cleared except two moderates.** Fixed: `jspdf` (critical) + `jspdf-autotable`
+  + `dompurify` via a 2.x→4.x upgrade; **`xlsx`** (high, *no npm fix exists*) by pinning SheetJS's
+  own CDN tarball, which is their documented remediation; `nanoid`, `socket.io-parser`,
+  `body-parser` in place. **Remaining, both moderate and both needing a major upgrade:**
+  `node-cron@3`'s vulnerable `uuid` (fix = node-cron 4.x) and `react-router@6` (fix = v7).
+  > ⚠️ `npm audit fix --omit=dev` **prunes devDependencies from `node_modules`** — it removed
+  > TypeScript and broke `npm run typecheck` until a plain `npm install` restored it. Use
+  > `npm audit fix` and read the diff instead.
+- **Still open by choice: no MFA, and no account lockout.** The login limiter (10 per 15 min,
+  keyed by mobile) slows brute force but never locks. Acceptable for an internal tool; would not
+  pass a formal review.
+
 ### 3.6 Concurrency & Anti-Oversell (critical)
 Seat issuance must never oversell. Strategy:
 1. Booking creation runs inside a **MongoDB transaction** (`session`).
@@ -260,7 +292,10 @@ Two rules keep this honest:
 
 ### 3.7 Scheduled Jobs (node-cron)
 - **Open-pool release** (`jobs/openPool.job.ts`): at `movie.startTime`, move each unit's
-  unbooked quota into `poolSeats`. **Opt-in — only for movies marked "Open to all"**
+  unbooked quota into `poolSeats`. **With no allocations it credits the seats that are actually
+  free instead**: `poolSeats` becomes the sole gate once the status flips, so crediting 0 made
+  an unallocated movie unbookable the instant it started — map full of free seats, every booking
+  refused. Allocation is optional, so that was an ordinary setup, not an edge case. **Opt-in — only for movies marked "Open to all"**
   (`openToAll`). It used to fire for every movie, which silently dissolved the per-unit split on
   every show; handing one unit's unused seats to everyone is a decision, so it takes the admin
   pressing the button. A restricted movie keeps its quota for its whole run and never reaches
@@ -315,6 +350,20 @@ populates to `null`, silently losing the attribution.
   each movie row re-opens it later. Both use `features/seats/AllocateSeatsModal.tsx`, so the
   "total must equal capacity" rule lives in exactly one place. Allocation is **optional** —
   skipping leaves every seat in the common pool, which the dialog states explicitly.
+- **The seat cap is the lesser of family size and unit quota**, resolved in one place
+  (`seatAllowance()`) that the picker's counter, the hold check and the Confirm error all read,
+  so they cannot report different numbers. A family of four facing a unit with one seat left
+  sees `0/1`, not `0/4`. `unitRemaining` is `null` when quota does not apply (no allocations, or
+  the pool has been released and quota is dissolved), in which case only the family limit binds.
+  When a unit's allocation is spent its members get an explicit **"No seats left for your unit"**
+  panel instead of a seat map where every tap is silently refused.
+- **Booking refunds only what an attempt actually consumed.** `rollback` used to decrement the
+  unit quota whenever the source was `UNIT_QUOTA` — including when the atomic guard had already
+  *rejected* the booking and incremented nothing. A failed attempt therefore handed back the
+  seat a different, successful booking was holding, and a retry then sailed through: two people
+  booked against a one-seat allocation, and the counter read wrong. It now tracks `quotaTaken` /
+  `poolTaken` per attempt. The same fix closed the opposite leak on the pool path, which
+  decremented `poolSeats` and never refunded them on failure.
 - **Family limit is enforced at HOLD time**, not only at booking. A hold is a seat nobody else
   can have, so leaving holds uncapped let one person tie up the auditorium a seat at a time and
   only discover the limit on Confirm. `seatAllowance()` counts **issued tickets + seats
@@ -335,10 +384,25 @@ populates to `null`, silently losing the attribution.
   until the end.
 - **Admin `openToAll`** per movie: when set, **JCO personnel may also book seats marked for
   Jawans** — a one-step-down rank extension. No other cross-rank access is granted: Officers
-  cannot book Jawan/JCO seats, Jawans cannot book JCO/Officer seats. **Unit is not a
-  factor either way**: `movieseats` carries `allowedRanks` only, so seats are never assigned to
-  units and any unit may book any seat, open-to-all or not. (The per-unit `seatallocations`
-  quota is enforced on the `/bookings` path.) Flipping the toggle emits `movie:rules` to the
+  cannot book Jawan/JCO seats, Jawans cannot book JCO/Officer seats.
+
+  **It also dissolves unit quota, immediately — not at showtime.** Individual seats were never
+  assigned to units (`movieseats` carries `allowedRanks` only), but the per-unit `seatallocations`
+  quota caps how many a unit's members may take, and that cap is lifted the instant the flag is
+  set: `seatAllowance` reports `unitRemaining: null` and bookings take the `OPEN_POOL` path, so
+  a unit that had exhausted its allocation can book again straight away. Deferring this to the
+  showtime pool release meant the button lifted rank gating at once while units stayed locked
+  out for the hours in between — not what "open to all" means to anyone using it. The showtime
+  release still runs, moving leftover quota into `poolSeats` for reporting.
+
+  **`poolSeats` is a counter, not the inventory, and never blocks a booking.** Seats are claimed
+  atomically (`FREE -> BOOKED`), which is what actually prevents overselling; gating on the
+  counter as well added no safety and two real outages — a movie whose allocation was skipped
+  released 0 into the pool and refused every booking, and booking before a release would have
+  done the same. It is decremented for reporting, floored at zero, and only what was genuinely
+  decremented is refunded on failure.
+
+  Flipping the toggle emits `movie:rules` to the
   movie's room, because `bookable` is computed server-side under the rule in force when the map
   was fetched; without it, anyone already on the seat picker keeps seeing stale locked seats
   until they reload.

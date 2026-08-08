@@ -4,6 +4,8 @@ import { authenticate, authorize } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { ApiError } from '../../utils/apiError.js';
+import { AuditAction } from '../../constants/enums.js';
+import { recordAudit } from '../audit/audit.service.js';
 import { AdminModel } from '../../models/index.js';
 import { hashPassword } from '../../utils/password.js';
 import { mobileTaken } from '../auth/account.service.js';
@@ -54,6 +56,12 @@ adminRouter.post(
       name: name ?? '',
       role: role ?? Roles.ADMIN,
     });
+    // Privilege grant — the tier is the whole point of the record.
+    await recordAudit({
+      action: AuditAction.ADMIN_CREATE,
+      req,
+      metadata: { adminId: admin.id, grantedRole: admin.role, name: admin.name },
+    });
     res.status(201).json({ admin });
   }),
 );
@@ -70,6 +78,20 @@ adminRouter.patch(
     if (active !== undefined) admin.active = active;
     if (password) admin.passwordHash = await hashPassword(password);
     await admin.save();
+    // Record WHICH levers moved, never the password itself. Deactivating an account and
+    // resetting someone else's credentials are both privilege events.
+    await recordAudit({
+      action: password ? AuditAction.PASSWORD_RESET : AuditAction.ADMIN_UPDATE,
+      req,
+      metadata: {
+        adminId: admin.id,
+        changed: {
+          ...(name !== undefined ? { name } : {}),
+          ...(active !== undefined ? { active } : {}),
+          ...(password ? { passwordReset: true } : {}),
+        },
+      },
+    });
     res.json({ admin });
   }),
 );
@@ -89,7 +111,10 @@ adminRouter.delete(
       const superCount = await AdminModel.countDocuments({ role: Roles.SUPER_ADMIN });
       if (superCount <= 1) throw ApiError.conflict('At least one super admin is required');
     }
+    // Capture the tier before the document goes — afterwards there is nothing left to read.
+    const removed = { adminId: target.id, role: target.role, name: target.name };
     await target.deleteOne();
+    await recordAudit({ action: AuditAction.ADMIN_DELETE, req, metadata: removed });
     res.json({ success: true });
   }),
 );
