@@ -172,7 +172,7 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       **toggle open-to-all** (admin).
 - [x] Admin: **visual** Auditorium Designer (screen + rank-tinted seat rows, bulk "add N
       identical rows", click-to-edit/duplicate/delete) + "Generate seats" on movies.
-- [x] Admin: per-movie **"Open to all ranks"** toggle on the Movies list (bypasses rank gate).
+- [x] Admin: per-movie **"Open to all"** toggle on the Movies list (allows JCO→Jawan cross-rank booking + arms pool release).
 - [x] User: full seat-map picker (screen + rows), rank-restricted seats greyed, tap-to-hold
       with live updates + 2-min countdown, confirm booking; seat label on QR ticket.
 - [x] 5 seat-engine tests (generate, no double-hold, rank gate, book, hold reclaim). 18 total.
@@ -189,7 +189,8 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       **bookingOpen** flag gates seat booking to `VISIBILITY_LEAD` minutes before start.
       User UI shows a "Booking opens at …" pill when not yet bookable.
 - [x] Per-movie **openToAll** flag (Movie model boolean, admin toggle, seating service
-      rank-bypass): when true, all ranks may book any seat regardless of `allowedRanks`.
+      rank extension): when true, JCOs may also book Jawan seats (no other cross-rank access
+      granted). Previously was an all-rank bypass; narrowed to JCO→Jawan only.
 - [x] Updated domain test for new visibility/bookingOpen semantics. **18/18 tests green.**
 - [x] All four apps verified: tsc clean, eslint clean, vite build succeeds.
 
@@ -452,11 +453,13 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       seat. All three were already true and the new tests pass against unchanged logic:
       `rankAllowed()` short-circuits on `openToAll`, and **unit never gated seat booking at
       all** — `movieseats` has no unit field, so seats are not assigned to units in the
-      seat-based system. (The per-unit `seatallocations` quota is only enforced on the legacy
-      `/bookings` path, which no app calls; it survives as reporting bookkeeping.) Added three
+      seat-based system. (The per-unit `seatallocations` quota is enforced on the
+      `/bookings` path.) Added three
       regression tests: a JCO from an unrelated unit holds *and* books a JAWAN-only seat on an
       open-to-all movie; the same seat reads `bookable` on their seat map; and the rank gate
       still bites when the movie is not open to all — so the toggle stays meaningful.
+      **Later narrowed**: openToAll was subsequently tightened so it only grants JCO→Jawan
+      access (not all-rank bypass). See later entry.
 - [x] **Toggling "open to all" now reaches open seat maps live** (`movie:rules` → room
       `movie:<id>`). `bookable` is computed server-side under whichever rule applied when the
       map was fetched, so anyone already sitting on the seat picker kept seeing seats greyed out
@@ -508,3 +511,20 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       **back button** (`navigate(-1)`). The `/scan` route is still protected but no longer nested
       inside `OpsLayout`'s `<Outlet>`. The pill is now two tabs (Movies, Scanners), which sit
       comfortably on any phone. **40/40 tests, admin builds clean.**
+
+- [x] **Narrowed "Open to all" to JCO→Jawan only (no longer a full rank bypass).**
+      `rankAllowed()` rewritten: instead of returning `true` for every rank when `openToAll` is
+      set, it now only grants JCOs permission to book seats whose `allowedRanks` includes JAWAN.
+      Officers cannot book Jawan/JCO seats, Jawans cannot book JCO/Officer seats. The pool-release
+      job is unchanged. Added tests for JCO→Officer blocked, Jawan→JCO blocked. **43/43 tests.**
+- [x] **Allocation quota shown in movie detail modal (eye icon).** `getMovieAdminDetail()`
+      now returns `allocations[]` (unit, allocated, booked, released, remaining) alongside the
+      seat map and bookings. The modal shows an **"Allocation Quota"** table above the bookings
+      list with a **Full** badge when remaining = 0, or **Available** with the count.
+- [x] **Report: per-unit allocation quota + utilisation %.** The movie report API now returns
+      `allocated` per unit in `unitBookings`. The Reports page table adds **Allocated** and
+      **Utilisation** columns (≥80% green, ≥100% orange). The PDF download includes the same
+      five-column table.
+- [x] **Added explicit over-quota booking test.** Unit allocated 1 seat, user familySize 4:
+      booking 2 fails 409, booking 1 succeeds, then a second user from the same unit is blocked.
+      Confirms the atomic `findOneAndUpdate` guard on `SeatAllocationModel` works correctly.

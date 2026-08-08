@@ -66,7 +66,7 @@ src/
 | `users`           | Personnel accounts only | `mobile` 🔒(+`mobileHash`), `passwordHash`, `role` (fixed USER), `unit`, `rank` (OFFICER\|JCO\|JAWAN), `maritalStatus`, `spouseMobile` 🔒(+`spouseMobileHash`), `numberOfKids`, `familySize` (derived) |
 
 > 🔒 = **AES-256-GCM encrypted at rest** with a keyed HMAC blind index (`*Hash`) for lookup/uniqueness (§3.5.1).
-| `movies`          | Shows | `title`, `description`, `poster` (URL or base64), `showDate`, `startTime`, `durationMinutes` (endTime = start + duration), `totalSeats`, `status`, `openToAll` (rank bypass) |
+| `movies`          | Shows | `title`, `description`, `poster` (URL or base64), `showDate`, `startTime`, `durationMinutes` (endTime = start + duration), `totalSeats`, `status`, `openToAll` (JCO→Jawan rank extension + pool release flag) |
 | `settings`        | Admin-editable operational timings (singleton, fixed `_id`) | `visibilityLeadMinutes`, `noShowGraceMinutes`, `seatHoldSeconds`, `updatedBy` |
 | `auditoria`       | Physical venue layout (singleton) | `name`, `rows[]` → `{ label, seats[] → { number, allowedRanks[] } }` |
 | `movieseats`      | Per-movie seat inventory | `movie`, `row`, `number`, `label`, `allowedRanks[]`, `status` (FREE\|HELD\|BOOKED), `heldBy`, `holdExpiresAt`, `bookedBy`, `booking`, `ticketCode` |
@@ -333,14 +333,15 @@ populates to `null`, silently losing the attribution.
   `bookingOpensAt`, since the lead is admin-configurable and a client must not derive it from a
   hardcoded constant. Combined with seat reclaim, seats that open up mid-show remain claimable
   until the end.
-- **Admin `openToAll`** per movie: when set, any rank may book any seat (free-for-all),
-  ignoring per-seat rank restrictions — a JCO may take a JAWAN seat, and so on. **Unit is not a
+- **Admin `openToAll`** per movie: when set, **JCO personnel may also book seats marked for
+  Jawans** — a one-step-down rank extension. No other cross-rank access is granted: Officers
+  cannot book Jawan/JCO seats, Jawans cannot book JCO/Officer seats. **Unit is not a
   factor either way**: `movieseats` carries `allowedRanks` only, so seats are never assigned to
   units and any unit may book any seat, open-to-all or not. (The per-unit `seatallocations`
-  quota is enforced only on the legacy `/bookings` path, which no app calls — it survives as
-  reporting bookkeeping.) Flipping the toggle emits `movie:rules` to the movie's room, because
-  `bookable` is computed server-side under the rule in force when the map was fetched; without
-  it, anyone already on the seat picker keeps seeing stale locked seats until they reload.
+  quota is enforced on the `/bookings` path.) Flipping the toggle emits `movie:rules` to the
+  movie's room, because `bookable` is computed server-side under the rule in force when the map
+  was fetched; without it, anyone already on the seat picker keeps seeing stale locked seats
+  until they reload.
 - **Real-time:** a **socket.io** gateway (`realtime/gateway.ts`) attached to the HTTP server,
   with two rooms:
   - `movie:<id>` → `seats:update` on every hold / release / book / expiry, so all viewers of a
@@ -483,9 +484,10 @@ Notable post-build changes folded in:
       (rank / marital / spouse / kids / active / reset password) and **bulk personnel import
       from an Excel/CSV upload** (parsed client-side via SheetJS → `POST /personnel/bulk`,
       per-row error report + downloadable template), **movie editing** (locked once booking
-      opens) and a per-movie **"Open to all ranks"** toggle, plus a per-movie **Details dialog**
-      (eye icon in the Movies table) showing the **seat layout with who booked each seat**
-      (mobile / rank / unit), checked-in state, and the full bookings list (`GET
+      opens) and a per-movie **"Open to all"** toggle (allows JCO→Jawan cross-rank booking),
+      plus a per-movie **Details dialog** (eye icon in the Movies table) showing the **seat layout
+      with who booked each seat** (mobile / rank / unit), checked-in state, **per-unit allocation
+      quota** (allocated / booked / released / remaining), and the full bookings list (`GET
       /seating/movies/:id/detail`). **Movie cards and table rows show the poster** (2:3 thumbnail
       with a film-glyph fallback). **Poster upload redesigned** into a drag-and-drop drop-target
       that becomes the preview (both create and edit forms).
@@ -493,7 +495,7 @@ Notable post-build changes folded in:
       movie cards, **floating pill nav**, seat-map booking (rapid double-taps de-duped via an
       in-flight guard). Movies shown early with **`bookingOpen`** flag; user sees "Booking opens
       at …" when not yet bookable, and the movie stays listed/bookable until its end time.
-- Per-movie **`openToAll`** admin toggle bypasses rank-gating on seat booking.
+- Per-movie **`openToAll`** admin toggle: allows JCO to book Jawan seats (narrowed rank extension, not a full bypass).
 - Scanner: movie list → live scan → result bar (auto-dismiss 3s), robust camera w/ fallback.
 
 Deploy: Vercel (apps, each proxying `/api/v1` to the API — see §3.5) + Render (API) + Atlas;

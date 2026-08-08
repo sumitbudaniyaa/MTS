@@ -2,6 +2,7 @@ import {
   BookingModel,
   MovieModel,
   ScannerModel,
+  SeatAllocationModel,
   movieEndTime,
   UnitModel,
   UserModel,
@@ -97,7 +98,7 @@ export async function movieReport(movieId: string, now: Date = new Date()) {
     });
   }
 
-  const [ticketsAgg, unitAgg] = await Promise.all([
+  const [ticketsAgg, unitAgg, allocDocs] = await Promise.all([
     BookingModel.aggregate<{ _id: string; count: number }>([
       { $match: { movie: movie._id } },
       { $unwind: '$tickets' },
@@ -121,6 +122,8 @@ export async function movieReport(movieId: string, now: Date = new Date()) {
         },
       },
     ]),
+    // Per-unit quota (allocated / released) set by admin before the show.
+    SeatAllocationModel.find({ movie: movie._id }).select('unit allocated released'),
   ]);
 
   const byStatus: Record<string, number> = {};
@@ -130,6 +133,9 @@ export async function movieReport(movieId: string, now: Date = new Date()) {
   const unitIds = unitAgg.map((u) => u._id).filter(Boolean);
   const units = await UnitModel.find({ _id: { $in: unitIds } }).select('name');
   const nameById = new Map(units.map((u) => [String(u._id), u.name]));
+
+  // Map unitId -> allocated quota (from SeatAllocation documents).
+  const allocById = new Map(allocDocs.map((a) => [String(a.unit), a.allocated]));
 
   return {
     movie: {
@@ -145,6 +151,7 @@ export async function movieReport(movieId: string, now: Date = new Date()) {
     unitBookings: unitAgg
       .map((u) => ({
         unit: u._id ? (nameById.get(String(u._id)) ?? 'Unknown') : 'Open pool',
+        allocated: u._id ? (allocById.get(String(u._id)) ?? null) : null,
         booked: u.booked,
         checkedIn: u.checkedIn,
       }))

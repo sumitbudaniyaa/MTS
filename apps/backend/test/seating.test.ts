@@ -145,12 +145,65 @@ describe('open to all', () => {
     expect(booked.length).toBe(1);
   });
 
-  it('shows the seat as bookable on the map for that same JCO', async () => {
+  it('shows JAWAN seats as bookable for a JCO on the map', async () => {
     const { armoured, movie } = await openSetup();
     const jco = await makeUser('9000000032', armoured._id, Rank.JCO);
     const map = await seating.getMovieSeatMap(movie.id, jco.id, Rank.JCO);
     expect(map.openToAll).toBe(true);
+    // All seats in openSetup are JAWAN-only — a JCO should see them all as bookable
     expect(map.seats.every((s) => s.bookable)).toBe(true);
+  });
+
+  it('still blocks a JCO from an OFFICER seat even when openToAll is true', async () => {
+    // Re-use openSetup but add an Officer-only row to the auditorium.
+    // Simplest: create a fresh auditorium with an Officer row and book against it.
+    await AuditoriumModel.deleteMany({});
+    await AuditoriumModel.create({
+      name: 'Mixed',
+      rows: [
+        { label: 'A', seats: [{ number: 1, allowedRanks: [Rank.JAWAN] }] },
+        { label: 'B', seats: [{ number: 1, allowedRanks: [Rank.OFFICER] }] },
+      ],
+    });
+    const unit = await UnitModel.create({ name: 'TestUnit' });
+    const startTime = new Date(Date.now() + 30 * 60_000);
+    const movie = await MovieModel.create({
+      title: 'Mixed Movie',
+      showDate: startTime,
+      startTime,
+      totalSeats: 2,
+      status: MovieStatus.SCHEDULED,
+      openToAll: true,
+    });
+    await seating.generateMovieSeats(movie.id);
+    const jco = await makeUser('9000000034', unit._id, Rank.JCO);
+    // JCO → Jawan seat: OK
+    await expect(seating.holdSeats(jco.id, movie.id, ['A1'])).resolves.toMatchObject({ held: ['A1'] });
+    await seating.releaseSeats(jco.id, movie.id, ['A1']);
+    // JCO → Officer seat: blocked
+    await expect(seating.holdSeats(jco.id, movie.id, ['B1'])).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  it('blocks a Jawan from a JCO seat even when openToAll is true', async () => {
+    await AuditoriumModel.deleteMany({});
+    await AuditoriumModel.create({
+      name: 'JcoOnly',
+      rows: [{ label: 'A', seats: [{ number: 1, allowedRanks: [Rank.JCO] }] }],
+    });
+    const unit = await UnitModel.create({ name: 'TestUnit2' });
+    const startTime = new Date(Date.now() + 30 * 60_000);
+    const movie = await MovieModel.create({
+      title: 'JCO Movie',
+      showDate: startTime,
+      startTime,
+      totalSeats: 1,
+      status: MovieStatus.SCHEDULED,
+      openToAll: true,
+    });
+    await seating.generateMovieSeats(movie.id);
+    const jawan = await makeUser('9000000035', unit._id, Rank.JAWAN);
+    // Jawan → JCO seat: blocked
+    await expect(seating.holdSeats(jawan.id, movie.id, ['A1'])).rejects.toMatchObject({ statusCode: 403 });
   });
 
   it('still blocks the wrong rank when the movie is NOT open to all', async () => {

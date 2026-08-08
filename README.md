@@ -8,7 +8,7 @@ the full design and [todo.md](todo.md) for status.
 
 | Path           | What                                   | Status |
 |----------------|----------------------------------------|--------|
-| `apps/backend` | Node + Express + TS + Mongoose + socket.io | ✅ complete (40 tests) |
+| `apps/backend` | Node + Express + TS + Mongoose + socket.io | ✅ complete (43 tests) |
 | `apps/admin`   | React 19 Admin Portal (web, desktop, light/dark) | ✅ complete |
 | `apps/user`    | React 19 User app (web, mobile-first, live seat picker) | ✅ complete |
 | `apps/scanner` | React 19 Scanner app (web, mobile, QR camera) | ✅ complete |
@@ -158,10 +158,11 @@ Base path `/api/v1`. Full surface in [architecture.md](architecture.md#71-api-su
    A movie's **status advances by itself**: `DRAFT` → `SCHEDULED` (once allocated) → `OPEN`
    (booking window starts) → `COMPLETED` (end time). Editing locks once booking opens, and a
    movie with any booked ticket can't be deleted at all.
-   **"Open to all"** is the one step that isn't automatic: pressing it lifts the per-seat rank
-   restrictions immediately, and at showtime releases each unit's unused quota into the common
-   pool (status `POOL_RELEASED`) so anyone can take what's left. Leave it off and the movie
-   keeps its unit split for the whole run.
+   **"Open to all"** is the one step that isn't automatic: pressing it allows **JCO personnel
+   to also book Jawan seats** (no other cross-rank access is granted — Officers cannot book
+   Jawan/JCO seats, and Jawans cannot book JCO/Officer seats), and at showtime releases each
+   unit's unused quota into the common pool (status `POOL_RELEASED`) so anyone can take what's
+   left. Leave it off and the movie keeps its unit split for the whole run.
 3. User app → open the movie → pick seats on the **live map** (open two browsers to see
    seats lock in real time) → **Confirm** → QR tickets show the seat label. Cancelling frees
    the seat live.
@@ -171,7 +172,8 @@ Base path `/api/v1`. Full surface in [architecture.md](architecture.md#71-api-su
    so someone else can grab it, right up until the show ends. Seats reclaimed from walk-ins are
    recorded separately and never counted as no-shows.
 5. **Reports** are available **once a show has ended** — mid-screening an unscanned ticket just
-   means someone hasn't reached the door yet.
+   means someone hasn't reached the door yet. Reports include per-unit **allocation quota**
+   (allocated, booked, checked in, utilisation %) both in the web UI and in PDF downloads.
 6. Scanner app → pick the movie → scan the QR → verified / already-used / invalid.
 
 ## Deployment (free tier: Vercel + Render + Atlas)

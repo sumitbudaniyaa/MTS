@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 
 interface UnitBookingRow {
   unit: string;
+  allocated: number | null;
   booked: number;
   checkedIn: number;
 }
@@ -73,8 +74,14 @@ export function downloadMovieReportPdf(report: MovieReportData): void {
   if (report.unitBookings.length > 0) {
     autoTable(doc, {
       startY: nextY(doc, 120),
-      head: [['Unit', 'Booked', 'Checked in']],
-      body: report.unitBookings.map((r) => [r.unit, String(r.booked), String(r.checkedIn)]),
+      head: [['Unit', 'Allocated', 'Booked', 'Checked in', 'Utilisation']],
+      body: report.unitBookings.map((r) => {
+        const util =
+          r.allocated && r.allocated > 0
+            ? `${Math.round((r.booked / r.allocated) * 100)}%`
+            : '—';
+        return [r.unit, r.allocated != null ? String(r.allocated) : '—', String(r.booked), String(r.checkedIn), util];
+      }),
       theme: 'grid',
       headStyles: { fillColor: [24, 24, 27] },
     });

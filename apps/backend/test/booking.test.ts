@@ -135,4 +135,44 @@ describe('booking engine (M5)', () => {
     });
     expect(ok.quantity).toBe(2);
   });
+
+  it('blocks booking more seats than the unit quota allows', async () => {
+    // Unit gets only 1 seat allocated, but user's familySize is 4.
+    // The unit quota is the binding constraint — only 1 should succeed.
+    const { unit, movie } = await seedScenario({ totalSeats: 10, allocated: 1 });
+    const user = await makeUser('9000000088', unit._id, 4); // familySize = 4
+
+    // Trying to book 2 must fail (only 1 allocated to the unit).
+    await expect(
+      createBooking({
+        userId: user.id,
+        unitId: String(unit._id),
+        movieId: String(movie._id),
+        quantity: 2,
+        idempotencyKey: 'quota-over',
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    // Booking exactly 1 must succeed.
+    const ok = await createBooking({
+      userId: user.id,
+      unitId: String(unit._id),
+      movieId: String(movie._id),
+      quantity: 1,
+      idempotencyKey: 'quota-ok',
+    });
+    expect(ok.quantity).toBe(1);
+
+    // After the 1 seat is taken, a second user from the same unit must be blocked.
+    const user2 = await makeUser('9000000089', unit._id, 4);
+    await expect(
+      createBooking({
+        userId: user2.id,
+        unitId: String(unit._id),
+        movieId: String(movie._id),
+        quantity: 1,
+        idempotencyKey: 'quota-exhausted',
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
 });

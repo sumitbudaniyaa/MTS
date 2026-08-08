@@ -12,6 +12,7 @@ import { downloadMovieReportPdf } from '@/lib/reportPdf';
 
 interface UnitBooking {
   unit: string;
+  allocated: number | null;
   booked: number;
   checkedIn: number;
 }
@@ -151,18 +152,36 @@ export function ReportsPage() {
                 head={
                   <tr>
                     <Th>Unit</Th>
+                    <Th>Allocated</Th>
                     <Th>Booked</Th>
                     <Th>Checked in</Th>
+                    <Th>Utilisation</Th>
                   </tr>
                 }
               >
-                {report.data.unitBookings.map((u, i) => (
-                  <tr key={i}>
-                    <Td className="font-medium">{u.unit}</Td>
-                    <Td>{u.booked}</Td>
-                    <Td>{u.checkedIn}</Td>
-                  </tr>
-                ))}
+                {report.data.unitBookings.map((u, i) => {
+                  const util =
+                    u.allocated && u.allocated > 0
+                      ? Math.round((u.booked / u.allocated) * 100)
+                      : null;
+                  return (
+                    <tr key={i}>
+                      <Td className="font-medium">{u.unit}</Td>
+                      <Td>{u.allocated ?? '—'}</Td>
+                      <Td>{u.booked}</Td>
+                      <Td>{u.checkedIn}</Td>
+                      <Td>
+                        {util !== null ? (
+                          <span
+                            className={util >= 100 ? 'font-semibold text-warning' : util >= 80 ? 'text-success' : undefined}
+                          >
+                            {util}%
+                          </span>
+                        ) : '—'}
+                      </Td>
+                    </tr>
+                  );
+                })}
               </Table>
             </div>
           )}

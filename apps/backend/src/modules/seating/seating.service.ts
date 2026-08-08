@@ -5,6 +5,7 @@ import {
   BookingModel,
   MovieModel,
   MovieSeatModel,
+  SeatAllocationModel,
   UserModel,
   countSeats,
   isMovieVisible,
@@ -16,7 +17,7 @@ import { ApiError } from '../../utils/apiError.js';
 import { generateTicketCode } from '../../utils/ids.js';
 import { recordAudit } from '../audit/audit.service.js';
 import { broadcastMovie, broadcastMovieRules, broadcastSeats } from '../../realtime/gateway.js';
-import { AuditAction, MovieStatus, SeatStatus, TicketStatus, type RankType } from '../../constants/enums.js';
+import { AuditAction, MovieStatus, Rank, SeatStatus, TicketStatus, type RankType } from '../../constants/enums.js';
 import { Roles } from '../../types/index.js';
 import { settings } from '../../config/settings.js';
 
@@ -99,9 +100,14 @@ function rankAllowed(
   rank: RankType | null,
   openToAll = false,
 ): boolean {
-  if (openToAll) return true; // admin opened the movie to every rank
-  if (!allowedRanks || allowedRanks.length === 0) return true; // seat open to all
-  return rank ? allowedRanks.includes(rank) : false;
+  if (!allowedRanks || allowedRanks.length === 0) return true; // seat has no rank restriction
+  if (!rank) return false;
+  if (allowedRanks.includes(rank)) return true; // user's own rank is allowed
+  // When openToAll: JCOs may also book seats reserved for Jawans (one step down only).
+  // No other cross-rank access is granted — Officers cannot book Jawan/JCO seats,
+  // and Jawans cannot book JCO/Officer seats.
+  if (openToAll && rank === Rank.JCO && allowedRanks.includes(Rank.JAWAN)) return true;
+  return false;
 }
 
 export interface SeatView {
@@ -173,18 +179,23 @@ export async function getMovieAdminDetail(movieId: string) {
   const movie = await MovieModel.findById(movieId);
   if (!movie) throw ApiError.notFound('Movie not found');
 
-  const seats = await MovieSeatModel.find({ movie: movieId })
-    .sort('row number')
-    .populate({
-      path: 'bookedBy',
-      select: 'mobile rank unit',
-      populate: { path: 'unit', select: 'name' },
-    });
-
-  const bookings = await BookingModel.find({ movie: movieId })
-    .populate('user', 'mobile rank')
-    .populate('unit', 'name')
-    .sort('-createdAt');
+  // Fetch seats, bookings, and per-unit allocations in parallel.
+  const [seats, bookings, allocDocs] = await Promise.all([
+    MovieSeatModel.find({ movie: movieId })
+      .sort('row number')
+      .populate({
+        path: 'bookedBy',
+        select: 'mobile rank unit',
+        populate: { path: 'unit', select: 'name' },
+      }),
+    BookingModel.find({ movie: movieId })
+      .populate('user', 'mobile rank')
+      .populate('unit', 'name')
+      .sort('-createdAt'),
+    SeatAllocationModel.find({ movie: movieId })
+      .populate('unit', 'name')
+      .sort('unit'),
+  ]);
 
   // ticketCode -> ticket status, so each seat can show checked-in / cancelled state.
   const ticketByCode = new Map<string, { status: string; checkedIn: boolean }>();
@@ -232,6 +243,17 @@ export async function getMovieAdminDetail(movieId: string) {
     };
   });
 
+  const allocationList = allocDocs.map((a) => {
+    const unitDoc = a.unit as unknown as { name?: string } | null;
+    return {
+      unit: unitDoc?.name ?? String(a.unit),
+      allocated: a.allocated,
+      booked: a.booked,
+      released: a.released,
+      remaining: Math.max(0, a.allocated - a.booked),
+    };
+  });
+
   return {
     movie: {
       id: movie.id,
@@ -247,6 +269,7 @@ export async function getMovieAdminDetail(movieId: string) {
     rows,
     seats: seatViews,
     bookings: bookingList,
+    allocations: allocationList,
   };
 }
 

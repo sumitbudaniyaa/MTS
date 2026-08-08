@@ -61,7 +61,8 @@ behind them to prevent horizontal drift.
 - Creating a movie **prompts for seat allocation inline** (optional); reports unlock once a
   show ends and state exactly when that will be.
 - **Rank gating** — a user may only book seats their rank is permitted, with an admin override
-  (**"Open to all ranks"**) per movie.
+  (**"Open to all"**) per movie that allows **JCOs to also book Jawan seats** (no other
+  cross-rank access is granted).
 - **Family limit** — a member may hold at most `family size` tickets per show, enforced at **hold
   time** (not only at booking). The seat picker shows a live `2/4 selected` chip, greys out
   further seats, and refuses the tap with an explanation instead of letting a doomed selection
@@ -108,9 +109,12 @@ The top account (created at setup). **Manages people and access:**
 ### 4.2 Admin (Operational)
 Created by a Super Admin. **Runs the shows:**
 - Design/manage the **auditorium layout**.
-- Create / edit / delete **movies**, toggle "Open to all ranks", manage seat allocation.
+- Create / edit / delete **movies**, toggle "Open to all" (JCO→Jawan), manage seat allocation.
   Editing locks once booking opens, unit allocations lock at showtime, and a movie that has
   sold even one ticket can no longer be deleted.
+- **Movie details** (eye icon): seat map with who booked each seat, checked-in state,
+  **per-unit allocation quota** (allocated / booked / released / remaining), and the full
+  bookings list.
 - Manage **scanner operators**.
 - Read-only on units and personnel; full access to reports and audit logs.
 

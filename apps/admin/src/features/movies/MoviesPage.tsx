@@ -542,6 +542,13 @@ interface DetailBooking {
   createdAt: string;
   tickets: { seatLabel: string | null; status: string; checkedIn: boolean }[];
 }
+interface DetailAllocation {
+  unit: string;
+  allocated: number;
+  booked: number;
+  released: number;
+  remaining: number;
+}
 interface MovieDetail {
   movie: {
     id: string;
@@ -557,6 +564,7 @@ interface MovieDetail {
   rows: string[];
   seats: DetailSeat[];
   bookings: DetailBooking[];
+  allocations: DetailAllocation[];
 }
 
 function MovieDetailModal({ movie, onClose }: { movie: Movie; onClose: () => void }) {
@@ -699,6 +707,43 @@ function MovieDetailModal({ movie, onClose }: { movie: Movie; onClose: () => voi
                   {selected.allowedRanks.length ? `Ranks: ${selected.allowedRanks.join('/')}` : 'All ranks'}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* allocation quota */}
+          {data.allocations.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-sm font-semibold">Allocation Quota</h3>
+              <Table
+                head={
+                  <tr>
+                    <Th>Unit</Th>
+                    <Th>Allocated</Th>
+                    <Th>Booked</Th>
+                    <Th>Released</Th>
+                    <Th>Remaining</Th>
+                  </tr>
+                }
+              >
+                {data.allocations.map((a) => (
+                  <tr key={a.unit}>
+                    <Td className="font-medium">{a.unit}</Td>
+                    <Td>{a.allocated}</Td>
+                    <Td>{a.booked}</Td>
+                    <Td>{a.released}</Td>
+                    <Td>
+                      {a.remaining === 0 ? (
+                        <Badge tone="warning">Full</Badge>
+                      ) : (
+                        <span className="inline-flex items-center gap-1">
+                          {a.remaining}
+                          <Badge tone="success">Available</Badge>
+                        </span>
+                      )}
+                    </Td>
+                  </tr>
+                ))}
+              </Table>
             </div>
           )}
 
