@@ -84,7 +84,7 @@ export function MoviesPage() {
     mutationFn: ({ id, open }: { id: string; open: boolean }) =>
       api.post(`/seating/movies/${id}/open-all`, { open }),
     onSuccess: (_d, v) => {
-      toast.success(v.open ? 'Booking opened to all ranks' : 'Rank restrictions restored');
+      toast.success(v.open ? 'Open pool enabled (JCO→Jawan)' : 'Pool restricted to unit quotas');
       qc.invalidateQueries({ queryKey: ['movies'] });
     },
     onError: (e) => toast.error(apiErrorMessage(e)),
@@ -111,9 +111,9 @@ export function MoviesPage() {
             variant="secondary"
             loading={openAll.isPending && openAll.variables?.id === m.id}
             onClick={() => openAll.mutate({ id: m.id, open: !m.openToAll })}
-            title="Allow any rank to book this movie"
+            title="Release open pool & allow JCO cross-booking"
           >
-            {m.openToAll ? 'Restrict ranks' : 'Open to all'}
+            {m.openToAll ? 'Restrict pool' : 'Open pool'}
           </Button>
           {/* Allocation and details are frozen the moment booking opens: people
               are choosing seats against these numbers from that point on. */}
@@ -190,7 +190,7 @@ export function MoviesPage() {
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-1.5">
                   <Badge tone={statusTone[m.status]}>{m.status}</Badge>
-                  {m.openToAll && <Badge tone="success">All ranks</Badge>}
+                  {m.openToAll && <Badge tone="success">Open pool</Badge>}
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-1 border-t border-border pt-3">
                   {actionsFor(m)}
@@ -226,7 +226,7 @@ export function MoviesPage() {
                 <Td>
                   <div className="flex items-center gap-1.5">
                     <Badge tone={statusTone[m.status]}>{m.status}</Badge>
-                    {m.openToAll && <Badge tone="success">All ranks</Badge>}
+                    {m.openToAll && <Badge tone="success">Open pool</Badge>}
                   </div>
                 </Td>
                 <Td className="text-right">{actionsFor(m)}</Td>
@@ -601,7 +601,7 @@ function MovieDetailModal({ movie, onClose }: { movie: Movie; onClose: () => voi
           {/* summary */}
           <div className="flex flex-wrap gap-2 text-xs">
             <Badge tone={statusTone[data.movie.status]}>{data.movie.status}</Badge>
-            {data.movie.openToAll && <Badge tone="success">All ranks</Badge>}
+            {data.movie.openToAll && <Badge tone="success">Open pool</Badge>}
             <Badge tone="accent">
               {booked}/{data.movie.totalSeats} booked
             </Badge>
