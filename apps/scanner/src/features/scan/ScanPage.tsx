@@ -26,6 +26,7 @@ export function ScanPage() {
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [manual, setManual] = useState('');
   const [camError, setCamError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   // Auto-dismiss the result bar after 3s (resets whenever a new result arrives).
   useEffect(() => {
@@ -39,10 +40,11 @@ export function ScanPage() {
   async function verify(code: string) {
     const now = Date.now();
     // Dedupe rapid repeat reads of the same QR while it sits in frame.
-    if (busyRef.current || outcome) return;
+    if (busyRef.current || busy || outcome) return;
     if (code === lastRef.current.code && now - lastRef.current.at < 3000) return;
     lastRef.current = { code, at: now };
     busyRef.current = true;
+    setBusy(true);
     try {
       const res = await api.post<{ ticket: VerifyResult }>('/attendance/verify', { code });
       setOutcome({ kind: 'ok', result: res.data.ticket });
@@ -51,13 +53,18 @@ export function ScanPage() {
       setOutcome({ kind: 'fail', label: labelFor(message), message });
     } finally {
       busyRef.current = false;
+      setBusy(false);
     }
   }
 
   return (
     <div className="mx-auto flex h-full max-w-md flex-col">
       <header className="flex h-14 items-center justify-between border-b border-border px-4">
-        <button onClick={() => navigate('/')} className="text-sm text-muted">
+        <button
+          onClick={() => !busy && navigate('/')}
+          disabled={busy}
+          className="text-sm text-muted disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           ‹ Back
         </button>
         <span className="text-sm font-medium">Scanning</span>
@@ -116,11 +123,12 @@ export function ScanPage() {
               className="input"
               placeholder="TKT-XXXX"
               value={manual}
+              disabled={busy}
               onChange={(e) => setManual(e.target.value.toUpperCase())}
             />
             <button
-              className="rounded-lg bg-fg px-3 text-sm font-medium text-bg disabled:opacity-40"
-              disabled={manual.length < 4 || !online}
+              className="rounded-lg bg-fg px-3 text-sm font-medium text-bg disabled:opacity-40 disabled:cursor-not-allowed"
+              disabled={manual.length < 4 || !online || busy}
               onClick={() => verify(manual.trim())}
             >
               Verify

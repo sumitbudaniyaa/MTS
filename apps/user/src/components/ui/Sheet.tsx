@@ -16,11 +16,13 @@ export function Sheet({
   onClose,
   title,
   children,
+  loading,
 }: {
   open: boolean;
   onClose: () => void;
   title?: string;
   children: ReactNode;
+  loading?: boolean;
 }) {
   const [mounted, setMounted] = useState(open);
   const [shown, setShown] = useState(false);
@@ -52,10 +54,10 @@ export function Sheet({
 
   useEffect(() => {
     if (!mounted) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !loading && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [mounted, onClose]);
+  }, [mounted, onClose, loading]);
 
   // Don't let the page scroll behind the sheet.
   useEffect(() => {
@@ -75,7 +77,7 @@ export function Sheet({
           'absolute inset-0 bg-black/40 backdrop-blur-[1px] transition-opacity duration-[260ms] ease-out ' +
           (shown ? 'opacity-100' : 'opacity-0')
         }
-        onClick={onClose}
+        onClick={loading ? undefined : onClose}
         aria-hidden
       />
       <div
@@ -91,8 +93,9 @@ export function Sheet({
         <button
           type="button"
           onClick={onClose}
+          disabled={loading}
           aria-label="Close"
-          className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-surface-2 text-muted transition hover:text-fg active:scale-95"
+          className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-surface-2 text-muted transition hover:text-fg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <X className="h-4 w-4" />
         </button>

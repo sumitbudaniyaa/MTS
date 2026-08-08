@@ -36,7 +36,7 @@ export function LoginDrawer() {
   };
 
   return (
-    <Sheet open={loginOpen} onClose={closeLogin} title="Sign in to continue">
+    <Sheet open={loginOpen} onClose={closeLogin} title="Sign in to continue" loading={busy}>
       <form onSubmit={submit} className="space-y-3">
         <div>
           <label className="label" htmlFor="d-mobile">
@@ -50,6 +50,7 @@ export function LoginDrawer() {
             autoComplete="username"
             placeholder="10-digit mobile"
             value={mobile}
+            disabled={busy}
             onChange={(e) => setMobile(onlyDigits10(e.target.value))}
           />
         </div>
@@ -59,6 +60,7 @@ export function LoginDrawer() {
           autoComplete="current-password"
           placeholder="Password"
           value={password}
+          disabled={busy}
           onChange={(e) => setPassword(e.target.value)}
         />
         <Button type="submit" className="w-full" loading={busy}>

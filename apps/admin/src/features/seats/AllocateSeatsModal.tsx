@@ -88,10 +88,11 @@ export function AllocateSeatsModal({
     <Modal
       open
       onClose={onClose}
+      loading={save.isPending}
       title={movieTitle ? `Allocate seats — ${movieTitle}` : 'Allocate seats'}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
             {/* Allocation is optional: an un-allocated movie still sells from the open pool. */}
             {isNewMovie ? 'Skip for now' : 'Close'}
           </Button>
@@ -144,6 +145,7 @@ export function AllocateSeatsModal({
                 <NumberInput
                   className="h-8 w-20"
                   value={values[u.id] ?? 0}
+                  disabled={save.isPending}
                   onChange={(n) => setValues((v) => ({ ...v, [u.id]: n }))}
                 />
               </div>

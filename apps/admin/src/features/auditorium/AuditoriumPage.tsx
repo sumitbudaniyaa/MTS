@@ -68,7 +68,7 @@ function expand(rows: RowEdit[]): ApiRow[] {
   }));
 }
 
-function RankToggles({ value, onToggle }: { value: Rank[]; onToggle: (r: Rank) => void }) {
+function RankToggles({ value, onToggle, disabled }: { value: Rank[]; onToggle: (r: Rank) => void; disabled?: boolean }) {
   return (
     <div className="flex gap-1.5">
       {RANKS.map((rank) => {
@@ -77,9 +77,10 @@ function RankToggles({ value, onToggle }: { value: Rank[]; onToggle: (r: Rank) =
           <button
             key={rank}
             type="button"
+            disabled={disabled}
             onClick={() => onToggle(rank)}
             className={cn(
-              'rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors',
+              'rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
               on ? 'border-accent bg-accent/10 text-accent' : 'border-border text-muted',
             )}
           >
@@ -231,10 +232,11 @@ function EditLayoutDialog({ initial, onClose }: { initial: RowEdit[]; onClose: (
     <Modal
       open
       onClose={onClose}
+      loading={save.isPending}
       title="Edit auditorium layout"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button loading={save.isPending} onClick={() => save.mutate()}>
@@ -248,21 +250,22 @@ function EditLayoutDialog({ initial, onClose }: { initial: RowEdit[]; onClose: (
         <p className="mb-2 text-xs font-medium text-muted">Bulk add identical rows</p>
         <div className="flex flex-wrap items-end gap-2">
           <div className="w-16">
-            <NumberInput label="Rows" value={bulkRows} onChange={setBulkRows} />
+            <NumberInput label="Rows" value={bulkRows} onChange={setBulkRows} disabled={save.isPending} />
           </div>
           <div className="w-20">
-            <NumberInput label="Seats" value={bulkSeats} onChange={setBulkSeats} />
+            <NumberInput label="Seats" value={bulkSeats} onChange={setBulkSeats} disabled={save.isPending} />
           </div>
           <div>
             <label className="label">Ranks</label>
             <RankToggles
               value={bulkRanks}
+              disabled={save.isPending}
               onToggle={(r) =>
                 setBulkRanks((v) => (v.includes(r) ? v.filter((x) => x !== r) : [...v, r]))
               }
             />
           </div>
-          <Button size="sm" variant="secondary" onClick={addBulk}>
+          <Button size="sm" variant="secondary" onClick={addBulk} disabled={save.isPending}>
             <Plus className="h-3.5 w-3.5" /> Add
           </Button>
         </div>
@@ -283,9 +286,10 @@ function EditLayoutDialog({ initial, onClose }: { initial: RowEdit[]; onClose: (
             {rows.map((row, i) => (
               <button
                 key={i}
+                disabled={save.isPending}
                 onClick={() => setSelected(i === selected ? null : i)}
                 className={cn(
-                  'flex w-full items-center justify-center gap-2 rounded px-2 py-1 transition-colors',
+                  'flex w-full items-center justify-center gap-2 rounded px-2 py-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
                   i === selected ? 'bg-accent/5 ring-1 ring-accent' : 'hover:bg-surface-2',
                 )}
               >
@@ -316,15 +320,16 @@ function EditLayoutDialog({ initial, onClose }: { initial: RowEdit[]; onClose: (
           </div>
           <div className="flex flex-wrap items-end gap-2">
             <div className="w-14">
-              <Input label="Row" value={sel.label} onChange={(e) => setRow(selected, { label: e.target.value })} />
+              <Input label="Row" value={sel.label} disabled={save.isPending} onChange={(e) => setRow(selected, { label: e.target.value })} />
             </div>
             <div className="w-16">
-              <NumberInput label="Seats" value={sel.seatCount} onChange={(n) => setRow(selected, { seatCount: n })} />
+              <NumberInput label="Seats" value={sel.seatCount} disabled={save.isPending} onChange={(n) => setRow(selected, { seatCount: n })} />
             </div>
             <div>
               <label className="label">Ranks (none = all)</label>
               <RankToggles
                 value={sel.allowedRanks}
+                disabled={save.isPending}
                 onToggle={(r) =>
                   setRow(selected, {
                     allowedRanks: sel.allowedRanks.includes(r)
@@ -339,6 +344,7 @@ function EditLayoutDialog({ initial, onClose }: { initial: RowEdit[]; onClose: (
                 <Button
                   size="sm"
                   variant="ghost"
+                  disabled={save.isPending}
                   onClick={() =>
                     setRows((rs) => [
                       ...rs.slice(0, selected + 1),
@@ -354,6 +360,7 @@ function EditLayoutDialog({ initial, onClose }: { initial: RowEdit[]; onClose: (
                 <Button
                   size="sm"
                   variant="ghost"
+                  disabled={save.isPending}
                   onClick={() => {
                     setRows((rs) => rs.filter((_, idx) => idx !== selected));
                     setSelected(null);
@@ -370,6 +377,7 @@ function EditLayoutDialog({ initial, onClose }: { initial: RowEdit[]; onClose: (
       <Button
         variant="secondary"
         size="sm"
+        disabled={save.isPending}
         onClick={() => setRows((rs) => [...rs, { label: rowLabel(rs.length), seatCount: 10, allowedRanks: [] }])}
       >
         <Plus className="h-3.5 w-3.5" /> Add single row

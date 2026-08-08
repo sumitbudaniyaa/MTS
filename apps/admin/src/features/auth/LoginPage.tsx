@@ -41,6 +41,7 @@ export function LoginPage() {
             id="mobile"
             placeholder="10-digit mobile"
             error={errors.mobile?.message}
+            disabled={isSubmitting}
             {...mobileField(
               register('mobile', {
                 required: 'Mobile is required',
@@ -53,6 +54,7 @@ export function LoginPage() {
             id="password"
             placeholder="••••••••"
             error={errors.password?.message}
+            disabled={isSubmitting}
             {...register('password', { required: 'Password is required' })}
           />
           <Button type="submit" className="w-full" loading={isSubmitting}>

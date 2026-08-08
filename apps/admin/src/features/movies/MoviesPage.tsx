@@ -356,15 +356,16 @@ function MovieFormModal({
     <Modal
       open
       onClose={onClose}
+      loading={save.isPending}
       title="New movie"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button
            
-            disabled={totalSeats === 0}
+            disabled={totalSeats === 0 || save.isPending}
             onClick={handleSubmit((v) => save.mutate(v))}
             loading={save.isPending}
           >
@@ -373,15 +374,16 @@ function MovieFormModal({
         </>
       }
     >
-      <Input label="Title" error={errors.title?.message} {...register('title', { required: 'Required' })} />
-      <Input label="Description (optional)" {...register('description')} />
+      <Input label="Title" error={errors.title?.message} disabled={save.isPending} {...register('title', { required: 'Required' })} />
+      <Input label="Description (optional)" disabled={save.isPending} {...register('description')} />
 
-      <PosterField value={poster} onChange={setPoster} onFile={onPoster} />
+      <PosterField value={poster} onChange={setPoster} onFile={onPoster} disabled={save.isPending} />
 
       <Input
         label="Show date & time"
         type="datetime-local"
         error={errors.startTime?.message}
+        disabled={save.isPending}
         {...register('startTime', { required: 'Required' })}
       />
 
@@ -391,6 +393,7 @@ function MovieFormModal({
         inputMode="numeric"
         defaultValue={180}
         error={errors.durationMinutes?.message}
+        disabled={save.isPending}
         {...register('durationMinutes', {
           valueAsNumber: true,
           min: { value: 1, message: 'Must be at least 1 minute' },
@@ -479,10 +482,11 @@ function EditMovieModal({
     <Modal
       open
       onClose={onClose}
+      loading={save.isPending}
       title="Edit movie"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button loading={save.isPending} onClick={handleSubmit((v) => save.mutate(v))}>
@@ -491,13 +495,14 @@ function EditMovieModal({
         </>
       }
     >
-      <Input label="Title" error={errors.title?.message} {...register('title', { required: 'Required' })} />
-      <Input label="Description" {...register('description')} />
-      <PosterField value={poster} onChange={setPoster} onFile={onPoster} />
+      <Input label="Title" error={errors.title?.message} disabled={save.isPending} {...register('title', { required: 'Required' })} />
+      <Input label="Description" disabled={save.isPending} {...register('description')} />
+      <PosterField value={poster} onChange={setPoster} onFile={onPoster} disabled={save.isPending} />
       <Input
         label="Show date & time"
         type="datetime-local"
         error={errors.startTime?.message}
+        disabled={save.isPending}
         {...register('startTime', { required: 'Required' })}
       />
       <Input
@@ -505,6 +510,7 @@ function EditMovieModal({
         type="number"
         inputMode="numeric"
         error={errors.durationMinutes?.message}
+        disabled={save.isPending}
         {...register('durationMinutes', {
           valueAsNumber: true,
           min: { value: 1, message: 'Must be at least 1 minute' },
@@ -766,10 +772,12 @@ function PosterField({
   value,
   onChange,
   onFile,
+  disabled,
 }: {
   value: string;
   onChange: (v: string) => void;
   onFile: (file: File | undefined) => void;
+  disabled?: boolean;
 }) {
   const [over, setOver] = useState(false);
 
@@ -778,11 +786,13 @@ function PosterField({
       <label className="label">Poster</label>
       <div
         onDragOver={(e) => {
+          if (disabled) return;
           e.preventDefault();
           setOver(true);
         }}
-        onDragLeave={() => setOver(false)}
+        onDragLeave={() => !disabled && setOver(false)}
         onDrop={(e) => {
+          if (disabled) return;
           e.preventDefault();
           setOver(false);
           onFile(e.dataTransfer.files?.[0]);
@@ -804,18 +814,20 @@ function PosterField({
               <p className="text-sm font-medium text-fg">Poster added</p>
               <p className="mt-0.5 text-xs text-muted">Shown on the movie card and in the app.</p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <label className="cursor-pointer rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-2">
+                <label className={cn("cursor-pointer rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-2", disabled && "opacity-50 cursor-not-allowed pointer-events-none")}>
                   Replace
                   <input
                     type="file"
                     accept="image/*"
+                    disabled={disabled}
                     className="hidden"
                     onChange={(e) => onFile(e.target.files?.[0])}
                   />
                 </label>
                 <button
                   type="button"
-                  className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-danger hover:bg-surface-2"
+                  disabled={disabled}
+                  className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-danger hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={() => onChange('')}
                 >
                   Remove
@@ -824,7 +836,7 @@ function PosterField({
             </div>
           </div>
         ) : (
-          <label className="flex cursor-pointer flex-col items-center justify-center gap-1.5 px-4 py-7 text-center">
+          <label className={cn("flex cursor-pointer flex-col items-center justify-center gap-1.5 px-4 py-7 text-center", disabled && "opacity-50 cursor-not-allowed pointer-events-none")}>
             <ImagePlus className="h-6 w-6 text-muted" />
             <span className="text-sm font-medium text-fg">Add a poster</span>
             <span className="text-xs text-muted">Tap to choose &middot; or drop an image here</span>
@@ -832,6 +844,7 @@ function PosterField({
             <input
               type="file"
               accept="image/*"
+              disabled={disabled}
               className="hidden"
               onChange={(e) => onFile(e.target.files?.[0])}
             />

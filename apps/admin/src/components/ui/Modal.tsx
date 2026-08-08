@@ -11,6 +11,7 @@ export function Modal({
   children,
   footer,
   size = 'md',
+  loading,
 }: {
   open: boolean;
   onClose: () => void;
@@ -18,13 +19,14 @@ export function Modal({
   children: ReactNode;
   footer?: ReactNode;
   size?: keyof typeof modalWidths;
+  loading?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !loading && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, loading]);
 
   // Lock the page behind the dialog. Without this the body keeps its own scroll — and on a
   // phone, where the page is often wider than the viewport, that shows up as the dialog
@@ -43,7 +45,7 @@ export function Modal({
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overscroll-contain p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} aria-hidden />
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={loading ? undefined : onClose} aria-hidden />
       <div
         // `max-h-[100dvh]` minus the wrapper padding: on mobile the browser chrome makes vh
         // taller than what you can actually see, so a 90vh dialog runs off the bottom.
@@ -53,7 +55,8 @@ export function Modal({
           <h2 className="text-lg font-semibold tracking-tight text-fg">{title}</h2>
           <button
             onClick={onClose}
-            className="-mr-1 rounded-lg p-1.5 text-muted transition hover:bg-surface-2 hover:text-fg"
+            disabled={loading}
+            className="-mr-1 rounded-lg p-1.5 text-muted transition hover:bg-surface-2 hover:text-fg disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -90,6 +93,7 @@ export function ConfirmDialog({
       open={open}
       onClose={onClose}
       title={title}
+      loading={loading}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={loading}>

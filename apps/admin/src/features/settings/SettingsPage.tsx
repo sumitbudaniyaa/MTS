@@ -224,10 +224,11 @@ function MyAccountDialog({ onClose }: { onClose: () => void }) {
     <Modal
       open
       onClose={onClose}
+      loading={save.isPending}
       title="Edit my account"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button loading={save.isPending} onClick={() => save.mutate()}>
@@ -236,7 +237,7 @@ function MyAccountDialog({ onClose }: { onClose: () => void }) {
         </>
       }
     >
-      <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+      <Input label="Name" value={name} disabled={save.isPending} onChange={(e) => setName(e.target.value)} />
       <Input label="Mobile" value={user?.mobile ?? ''} disabled />
       <div className="border-t border-border pt-3">
         <p className="mb-2 text-xs font-medium text-muted">Change password (optional)</p>
@@ -244,9 +245,10 @@ function MyAccountDialog({ onClose }: { onClose: () => void }) {
           <PasswordInput
             label="Current"
             value={current}
+            disabled={save.isPending}
             onChange={(e) => setCurrent(e.target.value)}
           />
-          <PasswordInput label="New" value={next} onChange={(e) => setNext(e.target.value)} />
+          <PasswordInput label="New" value={next} disabled={save.isPending} onChange={(e) => setNext(e.target.value)} />
         </div>
       </div>
     </Modal>
@@ -375,13 +377,14 @@ function CreateAdminDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
     <Modal
       open
       onClose={onClose}
+      loading={save.isPending}
       title="New administrator"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
-          <Button disabled={!valid} loading={save.isPending} onClick={() => save.mutate()}>
+          <Button disabled={!valid || save.isPending} loading={save.isPending} onClick={() => save.mutate()}>
             Create
           </Button>
         </>
@@ -394,17 +397,19 @@ function CreateAdminDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
           maxLength={10}
           placeholder="10-digit mobile"
           value={mobile}
+          disabled={save.isPending}
           onChange={(e) => setMobile(onlyDigits10(e.target.value))}
         />
-        <Input label="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
+        <Input label="Name (optional)" value={name} disabled={save.isPending} onChange={(e) => setName(e.target.value)} />
       </div>
       <PasswordInput
         label="Password"
         placeholder="Min 8 characters"
         value={password}
+        disabled={save.isPending}
         onChange={(e) => setPassword(e.target.value)}
       />
-      <Select label="Tier" value={role} onChange={(e) => setRole(e.target.value as 'ADMIN' | 'SUPER_ADMIN')}>
+      <Select label="Tier" value={role} disabled={save.isPending} onChange={(e) => setRole(e.target.value as 'ADMIN' | 'SUPER_ADMIN')}>
         <option value="ADMIN">Admin — movies, auditorium & operations</option>
         <option value="SUPER_ADMIN">Super Admin — units, personnel & admins</option>
       </Select>
@@ -443,10 +448,11 @@ function EditAdminDialog({
     <Modal
       open
       onClose={onClose}
+      loading={save.isPending}
       title={`Edit ${admin.mobile}`}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button loading={save.isPending} onClick={() => save.mutate()}>
@@ -455,9 +461,9 @@ function EditAdminDialog({
         </>
       }
     >
-      <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+      <Input label="Name" value={name} disabled={save.isPending} onChange={(e) => setName(e.target.value)} />
       <Input label="Mobile" value={admin.mobile} disabled />
-      <Select label="Status" value={active ? 'active' : 'inactive'} onChange={(e) => setActive(e.target.value === 'active')}>
+      <Select label="Status" value={active ? 'active' : 'inactive'} disabled={save.isPending} onChange={(e) => setActive(e.target.value === 'active')}>
         <option value="active">Active</option>
         <option value="inactive">Inactive</option>
       </Select>
@@ -465,6 +471,7 @@ function EditAdminDialog({
         label="Reset password (optional)"
         placeholder="Leave blank to keep current"
         value={password}
+        disabled={save.isPending}
         onChange={(e) => setPassword(e.target.value)}
       />
     </Modal>

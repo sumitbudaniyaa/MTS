@@ -43,6 +43,7 @@ export function LoginPage() {
               maxLength={10}
               placeholder="10-digit mobile"
               value={mobile}
+              disabled={busy}
               onChange={(e) => setMobile(onlyDigits10(e.target.value))}
             />
           </div>
@@ -51,6 +52,7 @@ export function LoginPage() {
             id="password"
             placeholder="••••••••"
             value={password}
+            disabled={busy}
             onChange={(e) => setPassword(e.target.value)}
           />
           <Button type="submit" className="w-full" loading={busy}>

@@ -18,6 +18,7 @@ import { Modal, ConfirmDialog } from '@/components/ui/Modal';
 import { Table, Th, Td, Pagination } from '@/components/ui/Table';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useRole } from '@/lib/role';
+import { cn } from '@/lib/cn';
 
 const RANKS = ['OFFICER', 'JCO', 'JAWAN'] as const;
 /** '' means "all ranks" — the filter is omitted from the request entirely. */
@@ -297,10 +298,11 @@ function PersonnelFormModal({
     <Modal
       open
       onClose={onClose}
+      loading={save.isPending}
       title="Add personnel"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button onClick={handleSubmit((v) => save.mutate(v))} loading={save.isPending}>
@@ -313,31 +315,34 @@ function PersonnelFormModal({
         <Input
           label="Mobile"
           error={errors.mobile?.message}
+          disabled={save.isPending}
           {...mobileField(register('mobile', { required: 'Required', pattern: { value: /^\d{10}$/, message: '10 digits' } }))}
         />
         <PasswordInput
           label="Password"
           error={errors.password?.message}
+          disabled={save.isPending}
           {...register('password', { required: 'Required', minLength: { value: 8, message: 'Min 8' } })}
         />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Select label="Rank" {...register('rank')}>
+        <Select label="Rank" disabled={save.isPending} {...register('rank')}>
           <option value="OFFICER">Officer</option>
           <option value="JCO">JCO</option>
           <option value="JAWAN">Jawan</option>
         </Select>
-        <Select label="Marital status" {...register('maritalStatus')}>
+        <Select label="Marital status" disabled={save.isPending} {...register('maritalStatus')}>
           <option value="SINGLE">Single</option>
           <option value="MARRIED">Married</option>
         </Select>
-        <Input label="No. of kids" type="number" min={0} {...register('numberOfKids')} />
+        <Input label="No. of kids" type="number" min={0} disabled={save.isPending} {...register('numberOfKids')} />
       </div>
 
       {married && (
         <Input
           label="Spouse mobile (spouse logs in with the same password)"
+          disabled={save.isPending}
           {...mobileField(register('spouseMobile'))}
         />
       )}
@@ -392,10 +397,11 @@ function EditPersonnelModal({
     <Modal
       open
       onClose={onClose}
+      loading={save.isPending}
       title={`Edit ${person.mobile}`}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button loading={save.isPending} onClick={() => save.mutate()}>
@@ -405,7 +411,7 @@ function EditPersonnelModal({
       }
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Select label="Rank" value={rank} onChange={(e) => setRank(e.target.value as typeof rank)}>
+        <Select label="Rank" value={rank} disabled={save.isPending} onChange={(e) => setRank(e.target.value as typeof rank)}>
           <option value="OFFICER">Officer</option>
           <option value="JCO">JCO</option>
           <option value="JAWAN">Jawan</option>
@@ -413,12 +419,13 @@ function EditPersonnelModal({
         <Select
           label="Marital status"
           value={maritalStatus}
+          disabled={save.isPending}
           onChange={(e) => setMaritalStatus(e.target.value as typeof maritalStatus)}
         >
           <option value="SINGLE">Single</option>
           <option value="MARRIED">Married</option>
         </Select>
-        <NumberInput label="No. of kids" value={numberOfKids} onChange={setNumberOfKids} />
+        <NumberInput label="No. of kids" value={numberOfKids} disabled={save.isPending} onChange={setNumberOfKids} />
       </div>
 
       {maritalStatus === 'MARRIED' && (
@@ -427,11 +434,12 @@ function EditPersonnelModal({
           inputMode="numeric"
           maxLength={10}
           value={spouseMobile}
+          disabled={save.isPending}
           onChange={(e) => setSpouseMobile(onlyDigits10(e.target.value))}
         />
       )}
 
-      <Select label="Status" value={active ? 'active' : 'inactive'} onChange={(e) => setActive(e.target.value === 'active')}>
+      <Select label="Status" value={active ? 'active' : 'inactive'} disabled={save.isPending} onChange={(e) => setActive(e.target.value === 'active')}>
         <option value="active">Active</option>
         <option value="inactive">Inactive</option>
       </Select>
@@ -440,6 +448,7 @@ function EditPersonnelModal({
         label="Reset password (optional)"
         placeholder="Leave blank to keep current"
         value={password}
+        disabled={save.isPending}
         onChange={(e) => setPassword(e.target.value)}
       />
     </Modal>
@@ -548,13 +557,14 @@ function BulkUploadDialog({
     <Modal
       open
       onClose={onClose}
+      loading={upload.isPending}
       title="Bulk upload personnel"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={upload.isPending}>
             Close
           </Button>
-          <Button disabled={items.length === 0} loading={upload.isPending} onClick={() => upload.mutate()}>
+          <Button disabled={items.length === 0 || upload.isPending} loading={upload.isPending} onClick={() => upload.mutate()}>
             Import {items.length || ''}
           </Button>
         </>
@@ -565,12 +575,12 @@ function BulkUploadDialog({
           Upload an .xlsx/.csv with columns: mobile, password, rank, maritalStatus, spouseMobile,
           numberOfKids.
         </p>
-        <Button variant="ghost" size="sm" onClick={downloadTemplate}>
+        <Button variant="ghost" size="sm" onClick={downloadTemplate} disabled={upload.isPending}>
           <Download className="h-3.5 w-3.5" /> Template
         </Button>
       </div>
 
-      <label className="flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border py-8 text-center hover:bg-surface-2">
+      <label className={cn("flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border py-8 text-center hover:bg-surface-2", upload.isPending && "opacity-50 cursor-not-allowed pointer-events-none")}>
         <Upload className="h-5 w-5 text-muted" />
         <span className="text-sm font-medium">{fileName || 'Choose a spreadsheet'}</span>
         <span className="text-xs text-muted">.xlsx, .xls or .csv</span>
@@ -578,6 +588,7 @@ function BulkUploadDialog({
           type="file"
           accept=".xlsx,.xls,.csv"
           className="hidden"
+          disabled={upload.isPending}
           onChange={(e) => onFile(e.target.files?.[0])}
         />
       </label>

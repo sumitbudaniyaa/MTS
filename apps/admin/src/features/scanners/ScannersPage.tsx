@@ -170,10 +170,11 @@ function ScannerFormModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
     <Modal
       open
       onClose={onClose}
+      loading={save.isPending}
       title="New scanner"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button onClick={handleSubmit((v) => save.mutate(v))} loading={save.isPending}>
@@ -186,12 +187,14 @@ function ScannerFormModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
         <Input
           label="Mobile"
           error={errors.mobile?.message}
+          disabled={save.isPending}
           {...mobileField(register('mobile', { required: 'Required', pattern: { value: /^\d{10}$/, message: '10 digits' } }))}
         />
         <Input
           label="Password"
           type="password"
           error={errors.password?.message}
+          disabled={save.isPending}
           {...register('password', { required: 'Required', minLength: { value: 8, message: 'Min 8' } })}
         />
       </div>

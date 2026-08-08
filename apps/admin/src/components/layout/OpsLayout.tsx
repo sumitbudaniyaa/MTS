@@ -100,6 +100,40 @@ export function OpsLayout() {
  */
 function AccountSheet({ mobile, onClose }: { mobile?: string; onClose: () => void }) {
   const navigate = useNavigate();
+  const [changePassOpen, setChangePassOpen] = useState(false);
+
+  return (
+    <>
+      <Modal open onClose={onClose} title="My account">
+        <p className="mb-4 text-sm text-muted">
+          Signed in as <span className="font-medium text-fg">{mobile ?? '—'}</span>
+        </p>
+        <div className="space-y-3">
+          <Button className="w-full" onClick={() => setChangePassOpen(true)}>
+            Change password
+          </Button>
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={async () => {
+              await doLogout();
+              navigate('/login');
+              toast.success('Signed out');
+            }}
+          >
+            <LogOut className="h-4 w-4" /> Sign out
+          </Button>
+        </div>
+      </Modal>
+
+      {changePassOpen && (
+        <ChangePasswordModal onClose={() => setChangePassOpen(false)} />
+      )}
+    </>
+  );
+}
+
+function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [busy, setBusy] = useState(false);
@@ -118,41 +152,40 @@ function AccountSheet({ mobile, onClose }: { mobile?: string; onClose: () => voi
   }
 
   return (
-    <Modal open onClose={onClose} title="My account">
-      <p className="mb-4 text-sm text-muted">
-        Signed in as <span className="font-medium text-fg">{mobile ?? '—'}</span>
-      </p>
+    <Modal
+      open
+      onClose={onClose}
+      title="Change password"
+      loading={busy}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            loading={busy}
+            disabled={!current || next.length < 8}
+            onClick={() => void changePassword()}
+          >
+            Update password
+          </Button>
+        </>
+      }
+    >
       <div className="space-y-3">
         <PasswordInput
           label="Current password"
           value={current}
+          disabled={busy}
           onChange={(e) => setCurrent(e.target.value)}
         />
         <PasswordInput
           label="New password"
           value={next}
+          disabled={busy}
           onChange={(e) => setNext(e.target.value)}
         />
         <p className="text-xs text-muted">Use at least 8 characters.</p>
-        <Button
-          className="w-full"
-          loading={busy}
-          disabled={!current || next.length < 8}
-          onClick={() => void changePassword()}
-        >
-          Update password
-        </Button>
-        <Button
-          variant="secondary"
-          className="w-full"
-          onClick={async () => {
-            await doLogout();
-            navigate('/login');
-            toast.success('Signed out');
-          }}
-        >
-          <LogOut className="h-4 w-4" /> Sign out
-        </Button>
       </div>
     </Modal>
   );

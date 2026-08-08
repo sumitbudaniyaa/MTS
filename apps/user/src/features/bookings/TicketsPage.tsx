@@ -115,7 +115,7 @@ function TicketDetail({ booking, onClose }: { booking: Booking | null; onClose: 
   });
 
   return (
-    <Sheet open={!!booking} onClose={onClose} title={movie?.title ?? 'Tickets'}>
+    <Sheet open={!!booking} onClose={onClose} title={movie?.title ?? 'Tickets'} loading={cancel.isPending}>
       {movie && <p className="mb-4 text-xs text-muted">{fmt(movie.startTime)}</p>}
       <div className="max-h-[55vh] space-y-3 overflow-auto">
         {booking?.tickets.map((t: Ticket) => (

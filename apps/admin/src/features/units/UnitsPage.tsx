@@ -211,10 +211,11 @@ function UnitFormModal({
     <Modal
       open
       onClose={onClose}
+      loading={save.isPending}
       title={isEdit ? 'Edit unit' : 'New unit'}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
           <Button onClick={handleSubmit((v) => save.mutate(v))} loading={save.isPending}>
@@ -227,6 +228,7 @@ function UnitFormModal({
         label="Name"
         placeholder="e.g. Signals"
         error={errors.name?.message}
+        disabled={save.isPending}
         {...register('name', { required: 'Name is required' })}
       />
     </Modal>

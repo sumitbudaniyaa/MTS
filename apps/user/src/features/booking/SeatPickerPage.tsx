@@ -145,6 +145,7 @@ export function SeatPickerPage() {
   const statusOf = (s: SeatView): Status => live[s.label] ?? s.status;
 
   async function toggle(seat: SeatView) {
+    if (booking) return;
     // Ignore repeat taps on a seat that already has a hold/release in flight.
     if (pendingRef.current.has(seat.label)) return;
     const isSelected = selected.includes(seat.label);
@@ -287,7 +288,11 @@ export function SeatPickerPage() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-14 items-center justify-between border-b border-border px-4">
-        <button onClick={() => navigate('/')} className="text-sm text-muted">
+        <button
+          onClick={() => !booking && navigate('/')}
+          disabled={booking}
+          className="text-sm text-muted disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           ‹ Back
         </button>
         <span className="text-sm font-medium">Select seats</span>
@@ -356,7 +361,7 @@ export function SeatPickerPage() {
                           const rankBlocked = st === 'FREE' && !seat.bookable && !isMine;
                           // Free, allowed, but you have already picked your allocation.
                           const capped = !isMine && !taken && !rankBlocked && atLimit;
-                          const disabled = taken || rankBlocked || capped;
+                          const disabled = booking || taken || rankBlocked || capped;
                           return (
                             <button
                               key={seat.label}
