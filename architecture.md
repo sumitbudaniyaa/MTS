@@ -218,6 +218,10 @@ limiting, dependency CVEs. Clean on all but the items below, all now **fixed** e
   > ⚠️ `npm audit fix --omit=dev` **prunes devDependencies from `node_modules`** — it removed
   > TypeScript and broke `npm run typecheck` until a plain `npm install` restored it. Use
   > `npm audit fix` and read the diff instead.
+- **Deleting a movie cascades.** It used to remove only the movie row, orphaning its seat
+  inventory (`movieseats`, one document per seat) and its `seatallocations` forever. Both are
+  now deleted with it, and the create path's rollback cleans up too — seat generation can insert
+  rows before it fails.
 - **Still open by choice: no MFA, and no account lockout.** The login limiter (10 per 15 min,
   keyed by mobile) slows brute force but never locks. Acceptable for an internal tool; would not
   pass a formal review.

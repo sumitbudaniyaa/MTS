@@ -4,6 +4,7 @@ import {
   AuditoriumModel,
   BookingModel,
   MovieModel,
+  MovieSeatModel,
   ScannerModel,
   SeatAllocationModel,
   UnitModel,
@@ -467,5 +468,33 @@ describe('open-pool release with no allocations', () => {
     });
     expect(seats.length).toBe(1);
     expect((await MovieModel.findById(movie._id))?.poolSeats).toBe(3);
+  });
+});
+
+describe('deleting a movie cleans up after itself', () => {
+  it('removes the seat inventory and unit allocations, not just the movie', async () => {
+    await AuditoriumModel.create({
+      name: 'Cascade',
+      rows: [{ label: 'A', seats: [1, 2, 3, 4].map((n) => ({ number: n, allowedRanks: [] })) }],
+    });
+    const unit = await UnitModel.create({ name: 'Cascade' });
+    const startTime = new Date(Date.now() + 48 * 60 * 60_000);
+    const movie = await MovieModel.create({
+      title: 'Cascade', showDate: startTime, startTime, totalSeats: 4,
+      status: MovieStatus.SCHEDULED,
+    });
+    await generateMovieSeats(movie.id);
+    await setAllocations(movie.id, { allocations: [{ unit: unit.id, allocated: 4 }] });
+
+    expect(await MovieSeatModel.countDocuments({ movie: movie._id })).toBe(4);
+    expect(await SeatAllocationModel.countDocuments({ movie: movie._id })).toBe(1);
+
+    await deleteMovie(movie.id);
+
+    // Previously only the movie row went; its seats and allocations were left pointing at an
+    // id that no longer resolves — dead rows nothing would ever show or clean up.
+    expect(await MovieModel.findById(movie._id)).toBeNull();
+    expect(await MovieSeatModel.countDocuments({ movie: movie._id })).toBe(0);
+    expect(await SeatAllocationModel.countDocuments({ movie: movie._id })).toBe(0);
   });
 });

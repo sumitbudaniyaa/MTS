@@ -2,6 +2,8 @@ import type { FilterQuery } from 'mongoose';
 import {
   AuditoriumModel,
   MovieModel,
+  MovieSeatModel,
+  SeatAllocationModel,
   countSeats,
   isMovieVisible,
   movieEndTime,
@@ -43,7 +45,10 @@ export async function createMovie(input: CreateMovieInput): Promise<MovieDoc> {
       const { generateMovieSeats } = await import('../seating/seating.service.js');
       await generateMovieSeats(movie.id);
     } catch (err) {
+      // Seat generation may have inserted rows before failing — take those with it, or a failed
+      // create leaves an orphaned seat map behind.
       await MovieModel.findByIdAndDelete(movie.id);
+      await MovieSeatModel.deleteMany({ movie: movie.id });
       throw err;
     }
   }
@@ -104,6 +109,15 @@ export async function deleteMovie(id: string): Promise<void> {
   // gone. The ticket count above is the only thing deletion can actually harm.
   const res = await MovieModel.findByIdAndDelete(id);
   if (!res) throw ApiError.notFound('Movie not found');
+
+  // Cascade. Deleting only the movie left its whole seat inventory (one document per seat) and
+  // its per-unit allocations behind forever, referencing an id that no longer resolves — dead
+  // rows that no screen would ever show again and nothing would ever clean up. Done after the
+  // movie is gone so a failure here cannot leave a movie that looks deletable but isn't.
+  await Promise.all([
+    MovieSeatModel.deleteMany({ movie: id }),
+    SeatAllocationModel.deleteMany({ movie: id }),
+  ]);
 }
 
 /**

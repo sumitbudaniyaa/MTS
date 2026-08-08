@@ -608,3 +608,14 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       - Gotcha worth remembering: `npm audit fix --omit=dev` **prunes devDependencies**, which
         deleted TypeScript and broke `npm run typecheck` until `npm install` restored it.
       **53/53 tests, all four apps build.**
+- [x] **"Movies with allocations cannot be deleted" was a lie, and chasing it found a real leak.**
+      The sentence was hardcoded copy in the admin's delete confirmation — no such server rule
+      ever existed. The only rule is `seatsBooked > 0`, and the delete button is hidden in that
+      case, so the dialog is *only* ever reached for a movie nobody booked: the warning it showed
+      could never apply. Replaced with what actually happens.
+      Verifying that new copy exposed the leak: **`deleteMovie` removed only the movie row**,
+      leaving its entire seat inventory (one document per seat, so hundreds per show) and its
+      per-unit allocations behind, pointing at an id that no longer resolves — rows no screen
+      would show again and nothing would clean up. Both now cascade, and the create path's
+      rollback does the same, since seat generation can insert rows before failing.
+      **54/54 tests.**

@@ -283,7 +283,10 @@ export function MoviesPage() {
         onClose={() => setDeleting(null)}
         onConfirm={() => deleting && del.mutate(deleting.id)}
         title="Delete movie"
-        message={`Delete "${deleting?.title}"? Movies with allocations cannot be deleted.`}
+        // Stale copy claimed allocations block deletion — they never did. The only rule is
+        // `seatsBooked > 0`, and the button is hidden in that case, so this dialog is only ever
+        // reached for a movie nobody has booked. Say what actually happens instead.
+        message={`Delete "${deleting?.title}"? Its seats and unit allocations go with it. This cannot be undone.`}
         confirmLabel="Delete"
         danger
         loading={del.isPending}
