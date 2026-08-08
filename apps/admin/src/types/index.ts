@@ -86,6 +86,7 @@ export interface AuditLog {
 export interface UpcomingMovie {
   id: string;
   title: string;
+  poster: string;
   startTime: string;
   status: MovieStatus;
   seatsBooked: number;

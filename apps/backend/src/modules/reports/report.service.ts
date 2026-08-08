@@ -37,7 +37,7 @@ export async function overview() {
   })
     .sort('startTime')
     .limit(8)
-    .select('title startTime status seatsBooked totalSeats poolSeats');
+    .select('title poster startTime status seatsBooked totalSeats poolSeats');
 
   // Latest bookings across all personnel.
   const recent = await BookingModel.find({})
@@ -62,6 +62,7 @@ export async function overview() {
     upcoming: upcomingList.map((m) => ({
       id: m.id,
       title: m.title,
+      poster: m.poster,
       startTime: m.startTime,
       status: m.status,
       seatsBooked: m.seatsBooked,

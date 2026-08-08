@@ -85,6 +85,7 @@ export function DashboardPage() {
               <Table
                 head={
                   <tr>
+                    <Th>Poster</Th>
                     <Th>Movie</Th>
                     <Th>Showtime</Th>
                     <Th>Status</Th>
@@ -97,6 +98,19 @@ export function DashboardPage() {
                   const pct = m.totalSeats ? Math.round((m.seatsBooked / m.totalSeats) * 100) : 0;
                   return (
                     <tr key={m.id}>
+                      <Td>
+                        {m.poster ? (
+                          <img
+                            src={m.poster}
+                            alt={m.title}
+                            className="h-12 w-9 rounded object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-12 w-9 items-center justify-center rounded bg-surface text-muted">
+                            <Film className="h-4 w-4" />
+                          </div>
+                        )}
+                      </Td>
                       <Td className="font-medium">{m.title}</Td>
                       <Td className="whitespace-nowrap">{fmt(m.startTime)}</Td>
                       <Td>
