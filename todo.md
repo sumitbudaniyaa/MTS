@@ -644,3 +644,13 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       as `quotaUsed`, and adds a row for units that booked from the pool with no allocation at all
       — previously their seats appeared nowhere in that table. Column renamed Booked → **Holding**,
       since it is no longer a quota number. **56/56 tests.**
+- [x] **Buttons no longer jump when they start working.** `loading` *prepended* a spinner to the
+      label, so the button grew by the icon plus its gap the instant it was pressed and shoved
+      whatever sat beside it — most visibly Cancel in a dialog footer, on both movie creation and
+      movie deletion. And `disabled:opacity-50` applied while loading, so a button that was busy
+      greyed out as though it had become unavailable. The spinner is now overlaid
+      (`absolute inset-0`) with the label kept in place but `invisible`, so the width cannot
+      change; dimming applies only when genuinely disabled, not while working; and `aria-busy`
+      is set. The gap moved from the button to the label wrapper, since the spinner is overlaid
+      rather than laid out. Fixed in **all three** apps — same code, same bug, and the user app's
+      Confirm button on the seat picker hit it too.

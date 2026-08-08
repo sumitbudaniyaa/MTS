@@ -495,6 +495,12 @@ a wrapper span so the label still appears for a **disabled** button, which fires
 events of its own. That last part is the point of the pattern: every locked control (edit after
 booking opens, allocate after showtime, delete-your-own-account) explains *why* it is locked.
 
+**A loading `Button` keeps its size and its colour.** The spinner is overlaid with the label
+held in place but invisible, so the button cannot change width mid-action — prepending it grew
+the button the instant it was pressed and pushed its neighbours around. Dimming is reserved for
+genuinely disabled buttons; a busy one stays at full strength, since it is working rather than
+unavailable.
+
 Shared traits across all three apps: compact rounded controls, password-reveal toggles, and **numeric inputs with no spinner arrows that can be fully cleared while typing**
 (`NumberInput`). The user app's bottom `Sheet` stays mounted for one transition after it
 closes (and keeps rendering its last children) so the panel animates back down instead of
