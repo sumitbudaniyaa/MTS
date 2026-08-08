@@ -390,6 +390,12 @@ populates to `null`, silently losing the attribution.
   Jawans** — a one-step-down rank extension. No other cross-rank access is granted: Officers
   cannot book Jawan/JCO seats, Jawans cannot book JCO/Officer seats.
 
+  **Opening the pool is one-way.** The server refuses to close it (`409`). Once open, quota is
+  dissolved and people book seats no unit's allocation accounted for; closing it would snap those
+  quotas back over bookings they never counted, leaving units with headroom they had already
+  spent. The admin UI offers no toggle back and confirms before opening, rather than promising
+  something the server will reject.
+
   **It also dissolves unit quota, immediately — not at showtime.** Individual seats were never
   assigned to units (`movieseats` carries `allowedRanks` only), but the per-unit `seatallocations`
   quota caps how many a unit's members may take, and that cap is lifted the instant the flag is
@@ -415,6 +421,12 @@ populates to `null`, silently losing the attribution.
   - `movie:<id>` → `seats:update` on every hold / release / book / expiry, so all viewers of a
     seat map see live availability.
   - `movie:<id>` → `movie:rules` when an admin flips `openToAll`, so open seat maps re-read.
+  - The **per-movie detail dialog** (`hooks/useLiveMovieDetail.ts`) joins both: `movie:<id>` for
+    every hold/release/book/reclaim and `admin:movies` for job-driven counters. An admin opens
+    that dialog precisely to watch a show fill up, so a snapshot frozen at open time is the wrong
+    thing to show. Events are **coalesced into one refetch on a 400 ms timer** — the payload is
+    the whole auditorium (seats + bookings + allocations) and a busy show emits bursts, so
+    refetching per event would pull hundreds of rows repeatedly for one visible change.
   - `admin:movies` → `movie:update` carrying `{ movieId, status?, seatsBooked?, poolSeats?,
     openToAll? }`. **Joining is restricted to ADMIN/SUPER_ADMIN**, checked against the role on
     the handshake token (the seat map is fine for any signed-in user; this feed is not). It

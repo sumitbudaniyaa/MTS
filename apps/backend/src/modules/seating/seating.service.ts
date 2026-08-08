@@ -92,10 +92,22 @@ export async function generateMovieSeats(movieId: string): Promise<number> {
   return total;
 }
 
-/** ADMIN: open a movie's booking to ALL ranks (free-for-all), or restore rank gating. */
+/**
+ * ADMIN: release a movie's seats to the general pool.
+ *
+ * **One-way.** Opening the pool dissolves unit quota immediately, and people then book seats
+ * that no unit's allocation accounted for. Closing it again would snap those quotas back over
+ * bookings they never counted — units would appear to have headroom they had already spent, and
+ * the numbers would not add up for the rest of the show. There is no coherent way back, so the
+ * server refuses rather than letting an admin discover that the hard way.
+ */
 export async function setMovieOpenToAll(movieId: string, open: boolean): Promise<boolean> {
   const movie = await MovieModel.findById(movieId);
   if (!movie) throw ApiError.notFound('Movie not found');
+  if (movie.openToAll && !open) {
+    throw ApiError.conflict('The pool cannot be closed once it has been opened');
+  }
+  if (movie.openToAll === open) return movie.openToAll; // already there — nothing to do
   movie.openToAll = open;
   await movie.save();
   broadcastMovie(movie.id, { openToAll: movie.openToAll });
@@ -271,17 +283,61 @@ export async function getMovieAdminDetail(movieId: string) {
     };
   });
 
+  // Seats each unit's members ACTUALLY hold right now, counted from the bookings themselves.
+  //
+  // `SeatAllocation.booked` only moves on a unit-quota booking, so the moment the pool is opened
+  // it freezes — and then keeps presenting itself as live quota while that unit's people carry on
+  // booking from the pool. The counter would say "2 of 4, 2 remaining" while the unit in fact
+  // held nine seats. Counting bookings instead means the figure can exceed `allocated`, which is
+  // exactly what an open pool means and what the old display could never show.
+  const activeByUnit = new Map<string, number>();
+  for (const b of bookings) {
+    const unitRef = b.unit as unknown as { _id?: unknown } | null;
+    const unitId = unitRef ? String(unitRef._id ?? b.unit) : null;
+    if (!unitId) continue; // no unit on the booking — nothing to attribute it to
+    const active = b.tickets.filter(
+      (t) => t.status === TicketStatus.BOOKED || t.status === TicketStatus.CHECKED_IN,
+    ).length;
+    if (active > 0) activeByUnit.set(unitId, (activeByUnit.get(unitId) ?? 0) + active);
+  }
+
   const allocationList = allocDocs.map((a) => {
-    const unitDoc = a.unit as unknown as { name?: string } | null;
-    const booked = Math.max(0, a.booked);
+    const unitDoc = a.unit as unknown as { _id?: unknown; name?: string } | null;
+    const unitId = String(unitDoc?._id ?? a.unit);
+    const held = activeByUnit.get(unitId) ?? 0;
+    activeByUnit.delete(unitId); // consumed; whatever is left booked without an allocation
     return {
-      unit: unitDoc?.name ?? String(a.unit),
+      unit: unitDoc?.name ?? unitId,
       allocated: a.allocated,
-      booked,
+      /** Live count — may exceed `allocated` once the pool is open. */
+      booked: held,
+      /** The quota counter, frozen at pool-open. Kept so the two can be told apart. */
+      quotaUsed: Math.max(0, a.booked),
       released: a.released,
-      remaining: Math.max(0, a.allocated - booked),
+      remaining: Math.max(0, a.allocated - held),
+      /** Seats beyond the unit's allocation, i.e. taken from the open pool. */
+      overQuota: Math.max(0, held - a.allocated),
     };
   });
+
+  // A unit with no allocation can still book once the pool is open. Without a row of its own its
+  // seats would simply not appear anywhere in this table.
+  for (const [unitId, held] of activeByUnit) {
+    const named = bookings.find((b) => {
+      const u = b.unit as unknown as { _id?: unknown; name?: string } | null;
+      return u && String(u._id ?? b.unit) === unitId;
+    });
+    const u = named?.unit as unknown as { name?: string } | null;
+    allocationList.push({
+      unit: u?.name ?? unitId,
+      allocated: 0,
+      booked: held,
+      quotaUsed: 0,
+      released: 0,
+      remaining: 0,
+      overQuota: held,
+    });
+  }
 
   return {
     movie: {

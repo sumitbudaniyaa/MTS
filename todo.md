@@ -619,3 +619,28 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       would show again and nothing would clean up. Both now cascade, and the create path's
       rollback does the same, since seat generation can insert rows before failing.
       **54/54 tests.**
+- [x] **The per-movie detail dialog (eye icon) is live.** It was a snapshot taken when the dialog
+      opened — which is backwards, since watching a show fill up is why an admin opens it.
+      `hooks/useLiveMovieDetail.ts` joins the movie's own room for every hold / release / booking /
+      no-show reclaim *and* the admin feed for the counters the cron jobs move, so the seat map,
+      the who-booked-what list, the totals and the per-unit allocation table all follow along.
+      Events are **coalesced into a single refetch on a 400 ms timer**: the detail payload is the
+      entire auditorium (seats + bookings + allocations), and a busy show emits seat events in
+      bursts, so refetching per event would pull hundreds of rows over and over for one visible
+      change.
+- [x] **Opening the pool is now one-way, and asks first.** The server refuses to close a pool
+      that has been opened (`409`): quota is dissolved on open and people then book seats no
+      allocation accounted for, so closing it would snap those quotas back over bookings they
+      never counted and leave units with headroom they had already spent. There is no coherent
+      way back, so it is refused rather than left for an admin to discover. The row no longer
+      offers a "Restrict pool" toggle — only "Open pool", behind a confirmation that spells out
+      that allocations stop applying immediately and it cannot be undone.
+- [x] **Per-unit figures stopped lying once the pool was open.** `SeatAllocation.booked` only
+      moves on a unit-quota booking, so it froze at pool-open while that unit's members carried on
+      booking from the pool — the table would report "2 of 4, 2 remaining" for a unit actually
+      holding nine seats, and `booked` could never exceed `allocated` the way it should.
+      `getMovieAdminDetail` now counts active tickets per unit, so the figure is live and can go
+      above the allocation (shown as a `+N from pool` badge), keeps the frozen counter separately
+      as `quotaUsed`, and adds a row for units that booked from the pool with no allocation at all
+      — previously their seats appeared nowhere in that table. Column renamed Booked → **Holding**,
+      since it is no longer a quota number. **56/56 tests.**

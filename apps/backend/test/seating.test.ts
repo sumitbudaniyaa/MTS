@@ -465,3 +465,72 @@ describe('open to all takes effect immediately, before any pool release', () => 
     expect((await seating.holdSeats(jco.id, movie.id, ['A1'])).held).toEqual(['A1']);
   });
 });
+
+describe('opening the pool is one-way', () => {
+  it('refuses to close a pool that has been opened', async () => {
+    await AuditoriumModel.create({
+      name: 'OneWay',
+      rows: [{ label: 'A', seats: [{ number: 1, allowedRanks: [] }] }],
+    });
+    const st = new Date(Date.now() + 30 * 60_000);
+    const movie = await MovieModel.create({
+      title: 'OneWay', showDate: st, startTime: st, totalSeats: 1,
+      status: MovieStatus.SCHEDULED,
+    });
+    await seating.generateMovieSeats(movie.id);
+
+    expect(await seating.setMovieOpenToAll(movie.id, true)).toBe(true);
+    // Closing it would snap unit quota back over bookings that no allocation counted, leaving
+    // units with headroom they had already spent.
+    await expect(seating.setMovieOpenToAll(movie.id, false)).rejects.toMatchObject({
+      statusCode: 409,
+      message: 'The pool cannot be closed once it has been opened',
+    });
+    expect((await MovieModel.findById(movie._id))?.openToAll).toBe(true);
+
+    // Re-opening an already-open pool is a harmless no-op, not an error.
+    expect(await seating.setMovieOpenToAll(movie.id, true)).toBe(true);
+  });
+});
+
+describe('per-unit figures once the pool is open', () => {
+  it('counts what a unit actually holds, above its allocation', async () => {
+    await AuditoriumModel.create({
+      name: 'OverQuota',
+      rows: [{ label: 'A', seats: [1, 2, 3, 4].map((n) => ({ number: n, allowedRanks: [] })) }],
+    });
+    const alpha = await UnitModel.create({ name: 'Alpha' });
+    const bravo = await UnitModel.create({ name: 'Bravo' });
+    const st = new Date(Date.now() + 30 * 60_000);
+    const movie = await MovieModel.create({
+      title: 'OverQuota', showDate: st, startTime: st, totalSeats: 4,
+      status: MovieStatus.SCHEDULED,
+    });
+    await seating.generateMovieSeats(movie.id);
+    // Alpha is allocated ONE seat.
+    await setAllocations(movie.id, {
+      allocations: [{ unit: alpha.id, allocated: 1 }, { unit: bravo.id, allocated: 3 }],
+    });
+
+    const u = await makeUser('9000000111', alpha._id, Rank.JAWAN, 4);
+    await seating.bookSeats({
+      userId: u.id, movieId: movie.id, labels: ['A1'], idempotencyKey: 'oq-1',
+    });
+
+    // Pool opens; the same person takes two more — quota no longer applies.
+    await seating.setMovieOpenToAll(movie.id, true);
+    await seating.bookSeats({
+      userId: u.id, movieId: movie.id, labels: ['A2', 'A3'], idempotencyKey: 'oq-2',
+    });
+
+    const detail = await seating.getMovieAdminDetail(movie.id);
+    const row = detail.allocations.find((a) => a.unit === 'Alpha')!;
+    // The quota counter froze at 1 when the pool opened…
+    expect(row.quotaUsed).toBe(1);
+    // …but Alpha is holding three seats, which is what the table must show.
+    expect(row.booked).toBe(3);
+    expect(row.allocated).toBe(1);
+    expect(row.overQuota).toBe(2);
+    expect(row.remaining).toBe(0);
+  });
+});

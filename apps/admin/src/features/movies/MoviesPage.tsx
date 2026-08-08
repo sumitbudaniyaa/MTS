@@ -14,6 +14,7 @@ import { Table, Th, Td, Pagination } from '@/components/ui/Table';
 import { AllocateSeatsModal } from '@/features/seats/AllocateSeatsModal';
 import { useRole } from '@/lib/role';
 import { useLiveMovies } from '@/hooks/useLiveMovies';
+import { useLiveMovieDetail } from '@/hooks/useLiveMovieDetail';
 import { cn } from '@/lib/cn';
 
 const statusTone: Record<MovieStatus, 'neutral' | 'accent' | 'success' | 'warning' | 'danger'> = {
@@ -61,6 +62,8 @@ export function MoviesPage() {
   const [editing, setEditing] = useState<Movie | null>(null);
   const [deleting, setDeleting] = useState<Movie | null>(null);
   const [viewing, setViewing] = useState<Movie | null>(null);
+  // Opening the pool cannot be undone (the server refuses to close it), so it gets a confirm.
+  const [opening, setOpening] = useState<Movie | null>(null);
 
   // Status and seat counts move on their own (cron jobs) — keep the table in step.
   useLiveMovies();
@@ -83,8 +86,9 @@ export function MoviesPage() {
   const openAll = useMutation({
     mutationFn: ({ id, open }: { id: string; open: boolean }) =>
       api.post(`/seating/movies/${id}/open-all`, { open }),
-    onSuccess: (_d, v) => {
-      toast.success(v.open ? 'Open pool enabled' : 'Pool restrictions restored');
+    onSuccess: () => {
+      toast.success('Pool opened — unit allocations no longer apply');
+      setOpening(null);
       qc.invalidateQueries({ queryKey: ['movies'] });
     },
     onError: (e) => toast.error(apiErrorMessage(e)),
@@ -106,15 +110,19 @@ export function MoviesPage() {
         <>
           {/* Open to all stays available right through the screening — it is how
               an admin frees up a half-empty show mid-run. */}
-          <Button
-            size="sm"
-            variant="secondary"
-            loading={openAll.isPending && openAll.variables?.id === m.id}
-            onClick={() => openAll.mutate({ id: m.id, open: !m.openToAll })}
-            title="Release unbooked seats to general pool"
-          >
-            {m.openToAll ? 'Restrict pool' : 'Open pool'}
-          </Button>
+          {/* No "close pool" counterpart: it is a one-way door, so offering a toggle would
+              promise something the server refuses. Once open, the badge on the row says so. */}
+          {!m.openToAll && (
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={openAll.isPending && openAll.variables?.id === m.id}
+              onClick={() => setOpening(m)}
+              title="Release unbooked seats to the general pool — cannot be undone"
+            >
+              Open pool
+            </Button>
+          )}
           {/* Allocation and details are frozen the moment booking opens: people
               are choosing seats against these numbers from that point on. */}
           {!bookingHasOpened(m) && (
@@ -277,6 +285,19 @@ export function MoviesPage() {
       )}
 
       {viewing && <MovieDetailModal movie={viewing} onClose={() => setViewing(null)} />}
+
+      <ConfirmDialog
+        open={!!opening}
+        onClose={() => setOpening(null)}
+        onConfirm={() => opening && openAll.mutate({ id: opening.id, open: true })}
+        title="Open the pool?"
+        message={
+          `Release "${opening?.title}" to the general pool? Unit allocations stop applying ` +
+          `immediately and anyone may book any remaining seat. This cannot be undone.`
+        }
+        confirmLabel="Open pool"
+        loading={openAll.isPending}
+      />
 
       <ConfirmDialog
         open={!!deleting}
@@ -548,9 +569,14 @@ interface DetailBooking {
 interface DetailAllocation {
   unit: string;
   allocated: number;
+  /** Seats the unit's members actually hold — can exceed `allocated` once the pool is open. */
   booked: number;
+  /** The quota counter, which stops moving at pool-open. Kept only to distinguish the two. */
+  quotaUsed: number;
   released: number;
   remaining: number;
+  /** Seats beyond the allocation, i.e. taken from the open pool. */
+  overQuota: number;
 }
 interface MovieDetail {
   movie: {
@@ -572,6 +598,9 @@ interface MovieDetail {
 
 function MovieDetailModal({ movie, onClose }: { movie: Movie; onClose: () => void }) {
   const [selected, setSelected] = useState<DetailSeat | null>(null);
+  // Watching a show fill up is the reason this dialog gets opened, so keep it live rather than
+  // showing a snapshot from whenever it happened to open.
+  useLiveMovieDetail(movie.id);
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['movie-detail', movie.id],
     queryFn: async () =>
@@ -716,15 +745,22 @@ function MovieDetailModal({ movie, onClose }: { movie: Movie; onClose: () => voi
           {/* allocation quota */}
           {data.allocations.length > 0 && (
             <div>
-              <h3 className="mb-2 text-sm font-semibold">Allocation Quota</h3>
+              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+                <h3 className="text-sm font-semibold">Seats by unit</h3>
+                {data.movie.openToAll && (
+                  <p className="text-xs text-muted">
+                    Pool is open — units may book beyond their allocation.
+                  </p>
+                )}
+              </div>
               <Table
                 head={
                   <tr>
                     <Th>Unit</Th>
                     <Th>Allocated</Th>
-                    <Th>Booked</Th>
+                    <Th>Holding</Th>
                     <Th>Released</Th>
-                    <Th>Remaining</Th>
+                    <Th>Status</Th>
                   </tr>
                 }
               >
@@ -732,10 +768,16 @@ function MovieDetailModal({ movie, onClose }: { movie: Movie; onClose: () => voi
                   <tr key={a.unit}>
                     <Td className="font-medium">{a.unit}</Td>
                     <Td>{a.allocated}</Td>
-                    <Td>{a.booked}</Td>
+                    {/* Live count, not the frozen quota counter — so it reads above `allocated`
+                        when a unit has taken seats from the open pool. */}
+                    <Td className={cn('tabular-nums', a.overQuota > 0 && 'font-semibold text-fg')}>
+                      {a.booked}
+                    </Td>
                     <Td>{a.released}</Td>
                     <Td>
-                      {a.remaining === 0 ? (
+                      {a.overQuota > 0 ? (
+                        <Badge tone="accent">+{a.overQuota} from pool</Badge>
+                      ) : a.remaining === 0 ? (
                         <Badge tone="warning">Full</Badge>
                       ) : (
                         <span className="inline-flex items-center gap-1">
