@@ -1,4 +1,5 @@
 import {
+  AdminModel,
   BookingModel,
   MovieModel,
   ScannerModel,
@@ -99,7 +100,7 @@ export async function movieReport(movieId: string, now: Date = new Date()) {
     });
   }
 
-  const [ticketsAgg, unitAgg, allocDocs] = await Promise.all([
+  const [ticketsAgg, unitAgg, allocDocs, scannerAgg] = await Promise.all([
     BookingModel.aggregate<{ _id: string; count: number }>([
       { $match: { movie: movie._id } },
       { $unwind: '$tickets' },
@@ -125,6 +126,26 @@ export async function movieReport(movieId: string, now: Date = new Date()) {
     ]),
     // Per-unit quota (allocated / released) set by admin before the show.
     SeatAllocationModel.find({ movie: movie._id }).select('unit allocated released'),
+    // Scanner / Door staff check-in activity breakdown.
+    BookingModel.aggregate<{
+      _id: { by: unknown; model: string };
+      count: number;
+    }>([
+      { $match: { movie: movie._id } },
+      { $unwind: '$tickets' },
+      {
+        $match: {
+          'tickets.status': TicketStatus.CHECKED_IN,
+          'tickets.checkedInBy': { $ne: null },
+        },
+      },
+      {
+        $group: {
+          _id: { by: '$tickets.checkedInBy', model: '$tickets.checkedInByModel' },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
   ]);
 
   const byStatus: Record<string, number> = {};
@@ -138,6 +159,41 @@ export async function movieReport(movieId: string, now: Date = new Date()) {
   // Map unitId -> allocated quota (from SeatAllocation documents).
   const allocById = new Map(allocDocs.map((a) => [String(a.unit), a.allocated]));
 
+  // Resolve scanner and admin staff names for door activity.
+  const scannerIds = scannerAgg.filter((s) => s._id.model === 'Scanner').map((s) => s._id.by);
+  const adminIds = scannerAgg.filter((s) => s._id.model === 'Admin').map((s) => s._id.by);
+
+  const [scannerDocs, adminDocs] = await Promise.all([
+    scannerIds.length > 0 ? ScannerModel.find({ _id: { $in: scannerIds } }) : [],
+    adminIds.length > 0 ? AdminModel.find({ _id: { $in: adminIds } }) : [],
+  ]);
+
+  const scannerMap = new Map((scannerDocs as Array<{ _id: unknown; mobile?: string }>).map((s) => [String(s._id), s.mobile || 'Scanner']));
+  const adminMap = new Map((adminDocs as Array<{ _id: unknown; name?: string; mobile?: string }>).map((a) => [String(a._id), a.name || a.mobile || 'Admin']));
+
+  const scannerActivity = scannerAgg
+    .map((s) => {
+      const idStr = String(s._id.by);
+      const isScanner = s._id.model === 'Scanner';
+      const name = isScanner ? (scannerMap.get(idStr) ?? 'Scanner') : (adminMap.get(idStr) ?? 'Admin');
+      return {
+        name,
+        type: isScanner ? ('Scanner' as const) : ('Admin' as const),
+        count: s.count,
+      };
+    })
+    .sort((a, b) => b.count - a.count);
+
+  const checkedIn = byStatus[TicketStatus.CHECKED_IN] ?? 0;
+  const expired = byStatus[TicketStatus.EXPIRED] ?? 0;
+  const released = byStatus[TicketStatus.RELEASED] ?? 0;
+  const cancelled = byStatus[TicketStatus.CANCELLED] ?? 0;
+
+  const totalBooked = checkedIn + expired + released;
+  const turnoutRate = totalBooked > 0 ? Math.round((checkedIn / totalBooked) * 100) : 0;
+  const occupancyRate = movie.totalSeats > 0 ? Math.round((movie.seatsBooked / movie.totalSeats) * 100) : 0;
+  const unsoldSeats = Math.max(0, movie.totalSeats - movie.seatsBooked);
+
   return {
     movie: {
       id: movie.id,
@@ -147,7 +203,12 @@ export async function movieReport(movieId: string, now: Date = new Date()) {
       totalSeats: movie.totalSeats,
       seatsBooked: movie.seatsBooked,
       poolSeats: movie.poolSeats,
-      availableSeats: Math.max(0, movie.totalSeats - movie.seatsBooked),
+      unsoldSeats,
+      availableSeats: unsoldSeats,
+    },
+    rates: {
+      turnoutRate,
+      occupancyRate,
     },
     unitBookings: unitAgg
       .map((u) => {
@@ -163,14 +224,11 @@ export async function movieReport(movieId: string, now: Date = new Date()) {
       .sort((a, b) => b.booked - a.booked),
     endTime: endsAt,
     attendance: {
-      booked: byStatus[TicketStatus.BOOKED] ?? 0,
-      checkedIn: byStatus[TicketStatus.CHECKED_IN] ?? 0,
-      // Reserved in advance and never claimed.
-      expired: byStatus[TicketStatus.EXPIRED] ?? 0,
-      // Walk-in seats taken mid-show and handed back — deliberately kept separate from the
-      // figure above, which is the one that reflects a wasted reservation.
-      released: byStatus[TicketStatus.RELEASED] ?? 0,
-      cancelled: byStatus[TicketStatus.CANCELLED] ?? 0,
+      checkedIn,
+      expired,
+      released,
+      cancelled,
     },
+    scannerActivity,
   };
 }

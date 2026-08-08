@@ -7,6 +7,13 @@ interface UnitBookingRow {
   booked: number;
   checkedIn: number;
 }
+
+interface ScannerActivityRow {
+  name: string;
+  type: string;
+  count: number;
+}
+
 export interface MovieReportData {
   movie: {
     title: string;
@@ -14,17 +21,23 @@ export interface MovieReportData {
     totalSeats: number;
     seatsBooked: number;
     poolSeats: number;
+    unsoldSeats?: number;
     availableSeats: number;
+  };
+  rates?: {
+    turnoutRate: number;
+    occupancyRate: number;
   };
   unitBookings: UnitBookingRow[];
   attendance: {
-    booked: number;
     checkedIn: number;
     expired: number;
     released: number;
     cancelled: number;
   };
+  scannerActivity?: ScannerActivityRow[];
 }
+
 function nextY(doc: jsPDF, fallback: number): number {
   const last = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable;
   return last ? last.finalY + 8 : fallback;
@@ -35,23 +48,28 @@ export function downloadMovieReportPdf(report: MovieReportData): void {
   const doc = new jsPDF();
   const m = report.movie;
   const a = report.attendance;
+  const r = report.rates;
 
   doc.setFontSize(16);
   doc.text(m.title, 14, 18);
   doc.setFontSize(10);
   doc.setTextColor(120);
   doc.text(`Auditorium booking report · generated ${new Date().toLocaleString()}`, 14, 25);
-  doc.text(`Status: ${m.status}`, 14, 31);
+  doc.text(
+    `Status: ${m.status}${r ? `  |  Turnout: ${r.turnoutRate}%  |  Occupancy: ${r.occupancyRate}%` : ''}`,
+    14,
+    31,
+  );
   doc.setTextColor(0);
 
   autoTable(doc, {
     startY: 38,
-    head: [['Seats', 'Count']],
+    head: [['Seats Economy', 'Count']],
     body: [
-      ['Total', String(m.totalSeats)],
+      ['Total capacity', String(m.totalSeats)],
       ['Booked', String(m.seatsBooked)],
       ['Common pool', String(m.poolSeats)],
-      ['Available', String(m.availableSeats)],
+      ['Unsold / Empty seats', String(m.unsoldSeats ?? m.availableSeats)],
     ],
     theme: 'grid',
     headStyles: { fillColor: [24, 24, 27] },
@@ -62,7 +80,6 @@ export function downloadMovieReportPdf(report: MovieReportData): void {
     head: [['Attendance', 'Count']],
     body: [
       ['Checked in', String(a.checkedIn)],
-      ['Booked (awaiting)', String(a.booked)],
       ['Not checked in', String(a.expired)],
       ['Released mid-show', String(a.released)],
       ['Cancelled', String(a.cancelled)],
@@ -82,6 +99,16 @@ export function downloadMovieReportPdf(report: MovieReportData): void {
             : '—';
         return [r.unit, r.allocated != null ? String(r.allocated) : '—', String(r.booked), String(r.checkedIn), util];
       }),
+      theme: 'grid',
+      headStyles: { fillColor: [24, 24, 27] },
+    });
+  }
+
+  if (report.scannerActivity && report.scannerActivity.length > 0) {
+    autoTable(doc, {
+      startY: nextY(doc, 160),
+      head: [['Door / Staff Name', 'Role', 'Scans Processed']],
+      body: report.scannerActivity.map((s) => [s.name, s.type, String(s.count)]),
       theme: 'grid',
       headStyles: { fillColor: [24, 24, 27] },
     });

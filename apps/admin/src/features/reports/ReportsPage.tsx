@@ -16,6 +16,11 @@ interface UnitBooking {
   booked: number;
   checkedIn: number;
 }
+interface ScannerActivity {
+  name: string;
+  type: string;
+  count: number;
+}
 interface MovieReport {
   movie: {
     id: string;
@@ -23,18 +28,23 @@ interface MovieReport {
     totalSeats: number;
     seatsBooked: number;
     poolSeats: number;
+    unsoldSeats?: number;
     availableSeats: number;
     status: string;
+  };
+  rates?: {
+    turnoutRate: number;
+    occupancyRate: number;
   };
   unitBookings: UnitBooking[];
   endTime: string;
   attendance: {
-    booked: number;
     checkedIn: number;
     expired: number;
     released: number;
     cancelled: number;
   };
+  scannerActivity?: ScannerActivity[];
 }
 
 /**
@@ -100,91 +110,134 @@ export function ReportsPage() {
                 <Download className="h-3.5 w-3.5" /> Download PDF
               </Button>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-            <Card>
-              <div className="text-2xl font-semibold">{report.data.movie.totalSeats}</div>
-              <div className="text-xs text-muted">Total seats</div>
-            </Card>
-            <Card>
-              <div className="text-2xl font-semibold">{report.data.movie.seatsBooked}</div>
-              <div className="text-xs text-muted">Booked</div>
-            </Card>
-            <Card>
-              <div className="text-2xl font-semibold">{report.data.movie.poolSeats}</div>
-              <div className="text-xs text-muted">Common pool</div>
-            </Card>
-            <Card>
-              <div className="text-2xl font-semibold">{report.data.movie.availableSeats}</div>
-              <div className="text-xs text-muted">Available</div>
-            </Card>
-          </div>
-
-          <div>
-            <h2 className="mb-3 text-sm font-medium text-muted">Attendance</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <Card>
-                <div className="text-2xl font-semibold">{report.data.attendance.checkedIn}</div>
-                <div className="text-xs text-muted">Checked in</div>
-              </Card>
-              <Card>
-                <div className="text-2xl font-semibold">{report.data.attendance.booked}</div>
-                <div className="text-xs text-muted">Booked (awaiting)</div>
-              </Card>
-              <Card>
-                <div className="text-2xl font-semibold">{report.data.attendance.expired}</div>
-                <div className="text-xs text-muted">Not checked in</div>
-              </Card>
-              <Card>
-                <div className="text-2xl font-semibold">{report.data.attendance.cancelled}</div>
-                <div className="text-xs text-muted">Cancelled</div>
-              </Card>
-              <Card>
-                <div className="text-2xl font-semibold">{report.data.attendance.released}</div>
-                <div className="text-xs text-muted">Released mid-show</div>
-              </Card>
-            </div>
-          </div>
-
-          {report.data.unitBookings.length > 0 && (
+            
             <div>
-              <h2 className="mb-3 text-sm font-medium text-muted">Bookings by unit</h2>
-              <Table
-                head={
-                  <tr>
-                    <Th>Unit</Th>
-                    <Th>Allocated</Th>
-                    <Th>Booked</Th>
-                    <Th>Checked in</Th>
-                    <Th>Utilisation</Th>
-                  </tr>
-                }
-              >
-                {report.data.unitBookings.map((u, i) => {
-                  const util =
-                    u.allocated && u.allocated > 0
-                      ? Math.round((u.booked / u.allocated) * 100)
-                      : null;
-                  return (
-                    <tr key={i}>
-                      <Td className="font-medium">{u.unit}</Td>
-                      <Td>{u.allocated ?? '—'}</Td>
-                      <Td>{u.booked}</Td>
-                      <Td>{u.checkedIn}</Td>
-                      <Td>
-                        {util !== null ? (
-                          <span
-                            className={util >= 100 ? 'font-semibold text-warning' : util >= 80 ? 'text-success' : undefined}
-                          >
-                            {util}%
-                          </span>
-                        ) : '—'}
-                      </Td>
-                    </tr>
-                  );
-                })}
-              </Table>
+              <h2 className="mb-3 text-sm font-medium text-muted">Seat Economy</h2>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <Card>
+                  <div className="text-2xl font-semibold">{report.data.movie.totalSeats}</div>
+                  <div className="text-xs text-muted">Total seats</div>
+                </Card>
+                <Card>
+                  <div className="text-2xl font-semibold">
+                    {report.data.movie.seatsBooked}
+                    {report.data.rates && (
+                      <span className="ml-2 text-xs font-normal text-success">
+                        ({report.data.rates.occupancyRate}% full)
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted">Booked seats</div>
+                </Card>
+                <Card>
+                  <div className="text-2xl font-semibold">{report.data.movie.poolSeats}</div>
+                  <div className="text-xs text-muted">Common pool</div>
+                </Card>
+                <Card>
+                  <div className="text-2xl font-semibold">
+                    {report.data.movie.unsoldSeats ?? report.data.movie.availableSeats}
+                  </div>
+                  <div className="text-xs text-muted">Unsold / Empty seats</div>
+                </Card>
+              </div>
             </div>
-          )}
+
+            <div>
+              <h2 className="mb-3 text-sm font-medium text-muted">Attendance Breakdown</h2>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <Card>
+                  <div className="text-2xl font-semibold">
+                    {report.data.attendance.checkedIn}
+                    {report.data.rates && (
+                      <span className="ml-2 text-xs font-normal text-success">
+                        ({report.data.rates.turnoutRate}% turnout)
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted">Checked in</div>
+                </Card>
+                <Card>
+                  <div className="text-2xl font-semibold">{report.data.attendance.expired}</div>
+                  <div className="text-xs text-muted">Not checked in</div>
+                </Card>
+                <Card>
+                  <div className="text-2xl font-semibold">{report.data.attendance.released}</div>
+                  <div className="text-xs text-muted">Released mid-show</div>
+                </Card>
+                <Card>
+                  <div className="text-2xl font-semibold">{report.data.attendance.cancelled}</div>
+                  <div className="text-xs text-muted">Cancelled</div>
+                </Card>
+              </div>
+            </div>
+
+            {report.data.scannerActivity && report.data.scannerActivity.length > 0 && (
+              <div>
+                <h2 className="mb-3 text-sm font-medium text-muted">Door & Scanner Staff Activity</h2>
+                <Table
+                  head={
+                    <tr>
+                      <Th>Staff Name / Account</Th>
+                      <Th>Role</Th>
+                      <Th className="text-right">Scans Processed</Th>
+                    </tr>
+                  }
+                >
+                  {report.data.scannerActivity.map((s, i) => (
+                    <tr key={i}>
+                      <Td className="font-medium">{s.name}</Td>
+                      <Td>
+                        <span className="rounded bg-accent/10 px-2 py-0.5 text-xs text-accent">
+                          {s.type}
+                        </span>
+                      </Td>
+                      <Td className="text-right font-semibold">{s.count}</Td>
+                    </tr>
+                  ))}
+                </Table>
+              </div>
+            )}
+
+            {report.data.unitBookings.length > 0 && (
+              <div>
+                <h2 className="mb-3 text-sm font-medium text-muted">Bookings by unit</h2>
+                <Table
+                  head={
+                    <tr>
+                      <Th>Unit</Th>
+                      <Th>Allocated</Th>
+                      <Th>Booked</Th>
+                      <Th>Checked in</Th>
+                      <Th>Utilisation</Th>
+                    </tr>
+                  }
+                >
+                  {report.data.unitBookings.map((u, i) => {
+                    const util =
+                      u.allocated && u.allocated > 0
+                        ? Math.round((u.booked / u.allocated) * 100)
+                        : null;
+                    return (
+                      <tr key={i}>
+                        <Td className="font-medium">{u.unit}</Td>
+                        <Td>{u.allocated ?? '—'}</Td>
+                        <Td>{u.booked}</Td>
+                        <Td>{u.checkedIn}</Td>
+                        <Td>
+                          {util !== null ? (
+                            <span
+                              className={util >= 100 ? 'font-semibold text-warning' : util >= 80 ? 'text-success' : undefined}
+                            >
+                              {util}%
+                            </span>
+                          ) : '—'}
+                        </Td>
+                      </tr>
+                    );
+                  })}
+                </Table>
+              </div>
+            )}
           </div>
         )}
       </Modal>
