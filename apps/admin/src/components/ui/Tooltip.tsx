@@ -17,6 +17,7 @@ export function Tooltip({ label, children }: { label: string; children: ReactNod
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   const show = useCallback(() => {
+    if (!window.matchMedia('(min-width: 768px)').matches) return;
     const r = ref.current?.getBoundingClientRect();
     // 6px of breathing room above the trigger; the tooltip itself is shifted up by its own
     // height via -translate-y-full, so its height doesn't need measuring.
@@ -41,7 +42,7 @@ export function Tooltip({ label, children }: { label: string; children: ReactNod
           <span
             role="tooltip"
             style={{ top: pos.top, left: pos.left }}
-            className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-lg bg-fg px-2 py-1 text-xs font-medium text-bg shadow-soft"
+            className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-lg bg-fg px-2 py-1 text-xs font-medium text-bg shadow-soft hidden md:block"
           >
             {label}
           </span>,
