@@ -17,7 +17,7 @@ import { ApiError } from '../../utils/apiError.js';
 import { generateTicketCode } from '../../utils/ids.js';
 import { recordAudit } from '../audit/audit.service.js';
 import { broadcastMovie, broadcastMovieRules, broadcastSeats } from '../../realtime/gateway.js';
-import { AuditAction, MovieStatus, Rank, SeatStatus, TicketStatus, type RankType } from '../../constants/enums.js';
+import { AuditAction, BookingSource, MovieStatus, Rank, SeatStatus, TicketStatus, type RankType } from '../../constants/enums.js';
 import { Roles } from '../../types/index.js';
 import { settings } from '../../config/settings.js';
 
@@ -54,8 +54,11 @@ export async function generateMovieSeats(movieId: string): Promise<number> {
   const movie = await MovieModel.findById(movieId);
   if (!movie) throw ApiError.notFound('Movie not found');
 
-  const booked = await MovieSeatModel.countDocuments({ movie: movieId, status: SeatStatus.BOOKED });
-  if (booked > 0) throw ApiError.conflict('Seats already booked — cannot regenerate layout');
+  const active = await MovieSeatModel.countDocuments({
+    movie: movieId,
+    status: { $in: [SeatStatus.BOOKED, SeatStatus.HELD] },
+  });
+  if (active > 0) throw ApiError.conflict('Seats are currently booked or on hold — cannot regenerate layout');
 
   const auditorium = await getAuditorium();
   const total = countSeats(auditorium.rows);
@@ -245,12 +248,13 @@ export async function getMovieAdminDetail(movieId: string) {
 
   const allocationList = allocDocs.map((a) => {
     const unitDoc = a.unit as unknown as { name?: string } | null;
+    const booked = Math.max(0, a.booked);
     return {
       unit: unitDoc?.name ?? String(a.unit),
       allocated: a.allocated,
-      booked: a.booked,
+      booked,
       released: a.released,
-      remaining: Math.max(0, a.allocated - a.booked),
+      remaining: Math.max(0, a.allocated - booked),
     };
   });
 
@@ -500,14 +504,56 @@ export async function bookSeats(args: {
     tickets.push({ code, seatLabel: label, status: TicketStatus.BOOKED });
   }
 
+  // Check if per-unit seat allocations exist for this movie.
+  const allocCount = await SeatAllocationModel.countDocuments({ movie: movie._id });
+  const hasAllocations = allocCount > 0;
+  const pooled = movie.status === MovieStatus.POOL_RELEASED;
+  const unitId = user.unit ? String(user.unit) : null;
+
+  const source: BookingSourceType = pooled
+    ? BookingSource.OPEN_POOL
+    : hasAllocations
+      ? BookingSource.UNIT_QUOTA
+      : BookingSource.OPEN_POOL;
+
   let bookingId: string;
   try {
+    if (source === BookingSource.UNIT_QUOTA) {
+      if (!unitId) {
+        await rollback(userId, movieId, claimed);
+        throw ApiError.badRequest('User is not assigned to a unit');
+      }
+      const alloc = await SeatAllocationModel.findOneAndUpdate(
+        {
+          movie: movie._id,
+          unit: unitId,
+          $expr: { $gte: [{ $subtract: ['$allocated', '$booked'] }, labels.length] },
+        },
+        { $inc: { booked: labels.length } },
+        { new: true },
+      );
+      if (!alloc) {
+        await rollback(userId, movieId, claimed);
+        throw ApiError.conflict('Your unit has no remaining seats for this movie');
+      }
+    } else if (pooled) {
+      const m = await MovieModel.findOneAndUpdate(
+        { _id: movie._id, $expr: { $gte: ['$poolSeats', labels.length] } },
+        { $inc: { poolSeats: -labels.length } },
+        { new: true },
+      );
+      if (!m) {
+        await rollback(userId, movieId, claimed);
+        throw ApiError.conflict('No seats left in the common pool');
+      }
+    }
+
     const [booking] = await BookingModel.create([
       {
         user: userId,
         movie: movie._id,
         unit: user.unit ?? null,
-        source: 'UNIT_QUOTA',
+        source,
         quantity: labels.length,
         idempotencyKey,
         tickets,
@@ -527,7 +573,7 @@ export async function bookSeats(args: {
     // needs to see this without a reload.
     if (after) broadcastMovie(movie.id, { seatsBooked: after.seatsBooked });
   } catch (err) {
-    await rollback(userId, movieId, claimed);
+    await rollback(userId, movieId, claimed, unitId, source);
     if (typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000) {
       const existing = await BookingModel.findOne({ user: userId, idempotencyKey });
       if (existing) {
@@ -551,12 +597,24 @@ export async function bookSeats(args: {
   return Object.assign(seats, { bookingId });
 }
 
-async function rollback(userId: string, movieId: string, labels: string[]): Promise<void> {
+async function rollback(
+  userId: string,
+  movieId: string,
+  labels: string[],
+  unitId?: string | null,
+  source?: BookingSourceType,
+): Promise<void> {
   if (labels.length === 0) return;
   await MovieSeatModel.updateMany(
     { movie: movieId, label: { $in: labels }, bookedBy: userId, status: SeatStatus.BOOKED },
     { $set: { status: SeatStatus.FREE, bookedBy: null, ticketCode: null, booking: null } },
   );
+  if (source === BookingSource.UNIT_QUOTA && unitId) {
+    await SeatAllocationModel.updateOne(
+      { movie: movieId, unit: unitId, booked: { $gte: labels.length } },
+      { $inc: { booked: -labels.length } },
+    );
+  }
 }
 
 // ---- Hold expiry job ------------------------------------------------------

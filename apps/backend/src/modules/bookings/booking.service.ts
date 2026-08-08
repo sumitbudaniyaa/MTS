@@ -196,8 +196,11 @@ export async function cancelBooking(
 
       // Return seats: quota bookings restore unit quota; pool bookings restore the pool.
       if (booking.source === BookingSource.UNIT_QUOTA && booking.unit) {
+        // Guard: only decrement if booked >= count — prevents negative values from
+        // data corruption or edge cases (e.g. a booking created before the quota counter
+        // was properly tracked).
         await SeatAllocationModel.updateOne(
-          { movie: movie._id, unit: booking.unit },
+          { movie: movie._id, unit: booking.unit, booked: { $gte: count } },
           { $inc: { booked: -count } },
           { session },
         );

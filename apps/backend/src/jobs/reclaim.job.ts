@@ -1,6 +1,6 @@
 import { runInTransaction } from '../utils/transaction.js';
-import { BookingModel, MovieModel, MovieSeatModel, movieEndTime } from '../models/index.js';
-import { MovieStatus, SeatStatus, TicketStatus } from '../constants/enums.js';
+import { BookingModel, MovieModel, MovieSeatModel, SeatAllocationModel, movieEndTime } from '../models/index.js';
+import { BookingSource, MovieStatus, SeatStatus, TicketStatus } from '../constants/enums.js';
 import { settings } from '../config/settings.js';
 import { logger } from '../config/logger.js';
 import { broadcastMovie, broadcastSeats, type MovieUpdate } from '../realtime/gateway.js';
@@ -80,6 +80,15 @@ export async function reclaimUnclaimedSeats(now: Date = new Date()): Promise<num
             await booking.save({ session: session ?? null });
             if (isWalkIn) released += changed;
             else noShows += changed;
+
+            // Restore unit quota for expired tickets if the movie is not pool-released yet
+            if (booking.source === BookingSource.UNIT_QUOTA && booking.unit && movie.status !== MovieStatus.POOL_RELEASED) {
+              await SeatAllocationModel.updateOne(
+                { movie: _id, unit: booking.unit, booked: { $gte: changed } },
+                { $inc: { booked: -changed } },
+                { session: session ?? null },
+              );
+            }
           }
         }
 

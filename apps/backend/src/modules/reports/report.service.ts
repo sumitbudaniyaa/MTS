@@ -149,12 +149,15 @@ export async function movieReport(movieId: string, now: Date = new Date()) {
       availableSeats: Math.max(0, movie.totalSeats - movie.seatsBooked),
     },
     unitBookings: unitAgg
-      .map((u) => ({
-        unit: u._id ? (nameById.get(String(u._id)) ?? 'Unknown') : 'Open pool',
-        allocated: u._id ? (allocById.get(String(u._id)) ?? null) : null,
-        booked: u.booked,
-        checkedIn: u.checkedIn,
-      }))
+      .map((u) => {
+        const booked = Math.max(0, u.booked);
+        return {
+          unit: u._id ? (nameById.get(String(u._id)) ?? 'Unknown') : 'Open pool',
+          allocated: u._id ? (allocById.get(String(u._id)) ?? null) : null,
+          booked,
+          checkedIn: u.checkedIn,
+        };
+      })
       .filter((u) => u.booked > 0)
       .sort((a, b) => b.booked - a.booked),
     endTime: endsAt,
