@@ -156,8 +156,12 @@ export async function movieReport(movieId: string, now: Date = new Date()) {
   const units = await UnitModel.find({ _id: { $in: unitIds } }).select('name');
   const nameById = new Map(units.map((u) => [String(u._id), u.name]));
 
-  // Map unitId -> allocated quota (from SeatAllocation documents).
-  const allocById = new Map(allocDocs.map((a) => [String(a.unit), a.allocated]));
+  // Map unitId -> total allocated quota across all rank rows for that unit.
+  const allocById = new Map<string, number>();
+  for (const a of allocDocs) {
+    const key = String(a.unit);
+    allocById.set(key, (allocById.get(key) ?? 0) + a.allocated);
+  }
 
   // Resolve scanner and admin staff names for door activity.
   const scannerIds = scannerAgg.filter((s) => s._id.model === 'Scanner').map((s) => s._id.by);

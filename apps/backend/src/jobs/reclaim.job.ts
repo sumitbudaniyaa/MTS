@@ -52,10 +52,14 @@ export async function reclaimUnclaimedSeats(now: Date = new Date()): Promise<num
         const ended = now.getTime() >= endsAt;
         const startedAt = movie.startTime.getTime();
 
+        // `rank` comes along because allocations are per (movie, unit, rank) — refunding a
+        // no-show without it credits whichever rank row matches first.
         const bookings = await BookingModel.find({
           movie: _id,
           'tickets.status': TicketStatus.BOOKED,
-        }).session(session ?? null);
+        })
+          .populate<{ user: { rank?: string } | null }>('user', 'rank')
+          .session(session ?? null);
 
         let noShows = 0; // reserved in advance, never turned up
         let released = 0; // walk-in seats handed back
@@ -82,9 +86,15 @@ export async function reclaimUnclaimedSeats(now: Date = new Date()): Promise<num
             else noShows += changed;
 
             // Restore unit quota for expired tickets if the movie is not pool-released yet
-            if (booking.source === BookingSource.UNIT_QUOTA && booking.unit && !movie.openToAll) {
+            const bookerRank = (booking.user as unknown as { rank?: string } | null)?.rank;
+            if (
+              booking.source === BookingSource.UNIT_QUOTA &&
+              booking.unit &&
+              bookerRank &&
+              !movie.openToAll
+            ) {
               await SeatAllocationModel.updateOne(
-                { movie: _id, unit: booking.unit, booked: { $gte: changed } },
+                { movie: _id, unit: booking.unit, rank: bookerRank, booked: { $gte: changed } },
                 { $inc: { booked: -changed } },
                 // updateOne's options take `undefined`, not `null`, for "no session".
                 { session: session ?? undefined },

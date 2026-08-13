@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { AuditoriumModel, MovieModel, MovieSeatModel, SeatAllocationModel, UnitModel, UserModel } from '../src/models/index.js';
 import * as seating from '../src/modules/seating/seating.service.js';
 import { setAllocations } from '../src/modules/seats/seat.service.js';
+import { movieReport } from '../src/modules/reports/report.service.js';
 import { hashPassword } from '../src/utils/password.js';
 import { Roles } from '../src/types/index.js';
 import { MovieStatus, Rank, SeatStatus } from '../src/constants/enums.js';
@@ -533,5 +534,99 @@ describe('per-unit figures once the pool is open', () => {
     expect(row.allocated).toBe(1);
     expect(row.overQuota).toBe(2);
     expect(row.remaining).toBe(0);
+  });
+});
+
+describe('quota refunds target the rank row they charged', () => {
+  it('refunds the booker’s own rank, not whichever row matched first', async () => {
+    await AuditoriumModel.create({
+      name: 'RankRefund',
+      rows: [{ label: 'A', seats: [1, 2, 3, 4].map((n) => ({ number: n, allowedRanks: [] })) }],
+    });
+    const alpha = await UnitModel.create({ name: 'Alpha' });
+    const st = new Date(Date.now() + 30 * 60_000);
+    const movie = await MovieModel.create({
+      title: 'RankRefund', showDate: st, startTime: st, totalSeats: 4,
+      status: MovieStatus.SCHEDULED,
+    });
+    await seating.generateMovieSeats(movie.id);
+    await setAllocations(movie.id, {
+      allocations: [
+        { unit: alpha.id, rank: Rank.OFFICER, allocated: 2 },
+        { unit: alpha.id, rank: Rank.JCO, allocated: 2 },
+      ],
+    });
+
+    // An Officer books first, so the Officer row carries booked >= 1. That is what makes the
+    // unscoped refund dangerous: its `booked: { $gte: n }` filter now matches Officer too.
+    const officer = await makeUser('9000000121', alpha._id, Rank.OFFICER, 4);
+    await seating.bookSeats({
+      userId: officer.id, movieId: movie.id, labels: ['A1'], idempotencyKey: 'rr-off',
+    });
+
+    const jco = await makeUser('9000000122', alpha._id, Rank.JCO, 4);
+    await seating.bookSeats({
+      userId: jco.id, movieId: movie.id, labels: ['A2'], idempotencyKey: 'rr-jco',
+    });
+
+    // Re-using the JCO's idempotency key charges the quota, then trips the unique index on
+    // (user, idempotencyKey) — failing *after* the charge, which is the rollback path.
+    await seating.bookSeats({
+      userId: jco.id, movieId: movie.id, labels: ['A3'], idempotencyKey: 'rr-jco',
+    });
+
+    const off = await SeatAllocationModel.findOne({
+      movie: movie._id, unit: alpha._id, rank: Rank.OFFICER,
+    });
+    const jcoRow = await SeatAllocationModel.findOne({
+      movie: movie._id, unit: alpha._id, rank: Rank.JCO,
+    });
+    // The Officer's seat is untouched by a JCO's failed booking.
+    expect(off?.booked).toBe(1);
+    expect(jcoRow?.booked).toBe(1);
+  });
+
+  it('aggregates multi-rank allocations correctly in reports and admin detail', async () => {
+    await AuditoriumModel.create({
+      name: 'ReportAgg',
+      rows: [{ label: 'A', seats: [1, 2, 3, 4].map((n) => ({ number: n, allowedRanks: [] })) }],
+    });
+    const beta = await UnitModel.create({ name: 'Beta' });
+    const st = new Date(Date.now() + 30 * 60_000);
+    const movie = await MovieModel.create({
+      title: 'ReportAgg', showDate: st, startTime: st, totalSeats: 4,
+      status: MovieStatus.SCHEDULED,
+    });
+    await seating.generateMovieSeats(movie.id);
+    await setAllocations(movie.id, {
+      allocations: [
+        { unit: beta.id, rank: Rank.OFFICER, allocated: 2 },
+        { unit: beta.id, rank: Rank.JCO, allocated: 2 },
+      ],
+    });
+
+    const officer = await makeUser('9000000123', beta._id, Rank.OFFICER, 4);
+    await seating.bookSeats({
+      userId: officer.id, movieId: movie.id, labels: ['A1'], idempotencyKey: 'agg-off',
+    });
+
+    // Mark completed to simulate post-show report
+    movie.status = MovieStatus.COMPLETED;
+    movie.startTime = new Date(Date.now() - 60_000);
+    await movie.save();
+
+    const report = await movieReport(movie.id, new Date(Date.now() + 3 * 3600_000));
+    const unitRow = report.unitBookings.find((u) => u.unit === 'Beta');
+    // Report should sum allocated across Officer (2) + JCO (2) = 4
+    expect(unitRow?.allocated).toBe(4);
+
+    const detail = await seating.getMovieAdminDetail(movie.id);
+    const offDetail = detail.allocations.find((a) => a.unit === 'Beta' && a.rank === Rank.OFFICER);
+    const jcoDetail = detail.allocations.find((a) => a.unit === 'Beta' && a.rank === Rank.JCO);
+
+    expect(offDetail?.allocated).toBe(2);
+    expect(offDetail?.booked).toBe(1);
+    expect(jcoDetail?.allocated).toBe(2);
+    expect(jcoDetail?.booked).toBe(0);
   });
 });

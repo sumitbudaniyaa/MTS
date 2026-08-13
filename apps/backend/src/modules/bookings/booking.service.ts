@@ -97,11 +97,14 @@ export async function createBooking(args: CreateArgs): Promise<BookingDoc> {
 
       if (source === BookingSource.UNIT_QUOTA) {
         if (!unitId) throw ApiError.badRequest('User is not assigned to a unit');
-        // Atomic quota guard — only succeeds if the unit has >= quantity free seats.
+        // Atomic quota guard — only succeeds if the unit has >= quantity free seats for THIS
+        // rank. Allocations are per (movie, unit, rank), so omitting rank would charge whichever
+        // row matched first and let a JCO consume the Officer quota.
         const alloc = await SeatAllocationModel.findOneAndUpdate(
           {
             movie: movie._id,
             unit: unitId,
+            rank: user.rank,
             $expr: { $gte: [{ $subtract: ['$allocated', '$booked'] }, quantity] },
           },
           { $inc: { booked: quantity } },
@@ -195,12 +198,18 @@ export async function cancelBooking(
     await booking.save({ session: session ?? null });
 
       // Return seats: quota bookings restore unit quota; pool bookings restore the pool.
-      if (booking.source === BookingSource.UNIT_QUOTA && booking.unit) {
+      // The quota refund targets the (unit, rank) row this booking actually charged, so the
+      // holder's rank is looked up rather than assumed. Read separately instead of populating:
+      // populating retypes the document and collides with the transaction's typing.
+      const holder = await UserModel.findById(booking.user).select('rank').session(session ?? null);
+      const holderRank = holder?.rank;
+      if (booking.source === BookingSource.UNIT_QUOTA && booking.unit && holderRank) {
         // Guard: only decrement if booked >= count — prevents negative values from
         // data corruption or edge cases (e.g. a booking created before the quota counter
-        // was properly tracked).
+        // was properly tracked). Scoped to the holder's rank, since that is the row the
+        // booking charged.
         await SeatAllocationModel.updateOne(
-          { movie: movie._id, unit: booking.unit, booked: { $gte: count } },
+          { movie: movie._id, unit: booking.unit, rank: holderRank, booked: { $gte: count } },
           { $inc: { booked: -count } },
           { session },
         );

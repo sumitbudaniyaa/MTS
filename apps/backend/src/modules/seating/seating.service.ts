@@ -331,24 +331,31 @@ export async function getMovieAdminDetail(movieId: string) {
   // booking from the pool. The counter would say "2 of 4, 2 remaining" while the unit in fact
   // held nine seats. Counting bookings instead means the figure can exceed `allocated`, which is
   // exactly what an open pool means and what the old display could never show.
-  const activeByUnit = new Map<string, number>();
+  const activeByUnitAndRank = new Map<string, number>();
   for (const b of bookings) {
     const unitRef = b.unit as unknown as { _id?: unknown } | null;
     const unitId = unitRef ? String(unitRef._id ?? b.unit) : null;
+    const userRef = b.user as unknown as { rank?: string } | null;
+    const userRank = userRef?.rank;
     if (!unitId) continue; // no unit on the booking — nothing to attribute it to
     const active = b.tickets.filter(
       (t) => t.status === TicketStatus.BOOKED || t.status === TicketStatus.CHECKED_IN,
     ).length;
-    if (active > 0) activeByUnit.set(unitId, (activeByUnit.get(unitId) ?? 0) + active);
+    if (active > 0) {
+      const key = userRank ? `${unitId}:${userRank}` : unitId;
+      activeByUnitAndRank.set(key, (activeByUnitAndRank.get(key) ?? 0) + active);
+    }
   }
 
   const allocationList = allocDocs.map((a) => {
     const unitDoc = a.unit as unknown as { _id?: unknown; name?: string } | null;
     const unitId = String(unitDoc?._id ?? a.unit);
-    const held = activeByUnit.get(unitId) ?? 0;
-    activeByUnit.delete(unitId); // consumed; whatever is left booked without an allocation
+    const key = a.rank ? `${unitId}:${a.rank}` : unitId;
+    const held = activeByUnitAndRank.get(key) ?? activeByUnitAndRank.get(unitId) ?? 0;
+    activeByUnitAndRank.delete(key); // consumed; whatever is left booked without an allocation
     return {
       unit: unitDoc?.name ?? unitId,
+      rank: a.rank ?? null,
       allocated: a.allocated,
       /** Live count — may exceed `allocated` once the pool is open. */
       booked: held,
@@ -361,9 +368,10 @@ export async function getMovieAdminDetail(movieId: string) {
     };
   });
 
-  // A unit with no allocation can still book once the pool is open. Without a row of its own its
+  // A unit/rank with no allocation can still book once the pool is open. Without a row of its own its
   // seats would simply not appear anywhere in this table.
-  for (const [unitId, held] of activeByUnit) {
+  for (const [key, held] of activeByUnitAndRank) {
+    const [unitId, rank] = key.includes(':') ? key.split(':') : [key, null];
     const named = bookings.find((b) => {
       const u = b.unit as unknown as { _id?: unknown; name?: string } | null;
       return u && String(u._id ?? b.unit) === unitId;
@@ -371,6 +379,7 @@ export async function getMovieAdminDetail(movieId: string) {
     const u = named?.unit as unknown as { name?: string } | null;
     allocationList.push({
       unit: u?.name ?? unitId,
+      rank,
       allocated: 0,
       booked: held,
       quotaUsed: 0,
@@ -708,6 +717,7 @@ export async function bookSeats(args: {
   // decrementing the unit quota unconditionally handed back a seat that a *different*,
   // successful booking was holding, which let a second person book against a 1-seat allocation.
   let quotaTaken = 0;
+  let quotaRank: RankType | null = null;
   let poolTaken = 0;
 
   let bookingId: string;
@@ -746,6 +756,7 @@ export async function bookSeats(args: {
         );
       }
       quotaTaken = labels.length;
+      quotaRank = userRankVal;
     } else if (pooled) {
       // `poolSeats` is a COUNTER, not the inventory. The seats themselves were already claimed
       // atomically above (FREE -> BOOKED), which is what actually prevents overselling, so
@@ -789,7 +800,7 @@ export async function bookSeats(args: {
     // needs to see this without a reload.
     if (after) broadcastMovie(movie.id, { seatsBooked: after.seatsBooked });
   } catch (err) {
-    await rollback(userId, movieId, claimed, { unitId, quotaTaken, poolTaken });
+    await rollback(userId, movieId, claimed, { unitId, rank: quotaRank, quotaTaken, poolTaken });
     if (typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000) {
       const existing = await BookingModel.findOne({ user: userId, idempotencyKey });
       if (existing) {
@@ -829,7 +840,15 @@ async function rollback(
   userId: string,
   movieId: string,
   labels: string[],
-  taken?: { unitId?: string | null; quotaTaken?: number; poolTaken?: number },
+  taken?: {
+    unitId?: string | null;
+    /** The rank row the quota was taken from. Allocations are per (movie, unit, rank), so a
+     *  refund without it decrements whichever row Mongo happens to match first — handing back
+     *  an Officer seat for a JCO's failed booking, and leaving the JCO's own seat consumed. */
+    rank?: RankType | null;
+    quotaTaken?: number;
+    poolTaken?: number;
+  },
 ): Promise<void> {
   if (labels.length > 0) {
     await MovieSeatModel.updateMany(
@@ -838,9 +857,9 @@ async function rollback(
     );
   }
   const quota = taken?.quotaTaken ?? 0;
-  if (quota > 0 && taken?.unitId) {
+  if (quota > 0 && taken?.unitId && taken.rank) {
     await SeatAllocationModel.updateOne(
-      { movie: movieId, unit: taken.unitId, booked: { $gte: quota } },
+      { movie: movieId, unit: taken.unitId, rank: taken.rank, booked: { $gte: quota } },
       { $inc: { booked: -quota } },
     );
   }
