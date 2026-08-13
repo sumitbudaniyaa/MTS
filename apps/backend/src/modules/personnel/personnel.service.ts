@@ -30,38 +30,68 @@ async function assertUnitExists(unitId: string): Promise<void> {
 }
 
 export async function createPersonnel(input: CreatePersonnelInput): Promise<ManagedDoc> {
-  // Uniqueness is per-collection: only clash with an existing account of the SAME role.
-  if (await mobileTaken(input.mobile, input.role)) {
-    throw ApiError.conflict('An account with this mobile already exists');
-  }
-  const passwordHash = await hashPassword(input.password);
+  const rawPassword = input.password && input.password.trim() ? input.password : 'Pass@2026';
+  const passwordHash = await hashPassword(rawPassword);
 
   // SCANNER operators go to their own collection (no unit/family fields).
   if (input.role === Roles.SCANNER) {
+    if (!input.mobile) throw ApiError.badRequest('Mobile is required for scanner operators');
+    if (await mobileTaken(input.mobile, Roles.SCANNER)) {
+      throw ApiError.conflict('An account with this mobile already exists');
+    }
     return ScannerModel.create({ mobile: input.mobile, passwordHash });
   }
 
   if (!input.unit) throw ApiError.badRequest('unit is required for USER personnel');
-  await assertUnitExists(input.unit);
+  const unitDoc = await UnitModel.findById(input.unit);
+  if (!unitDoc) throw ApiError.badRequest('Referenced unit does not exist');
+  if (!unitDoc.active) throw ApiError.badRequest('Referenced unit is inactive');
+
+  const isUsernameMode = unitDoc.loginMode === 'USERNAME';
+  let mobile = input.mobile;
+  let username = input.username?.trim();
+
+  if (isUsernameMode) {
+    if (!username) throw ApiError.badRequest('Username is required for personnel in this unit');
+    const { usernameTaken } = await import('../auth/account.service.js');
+    if (await usernameTaken(username)) {
+      throw ApiError.conflict('An account with this username already exists');
+    }
+    if (!mobile) {
+      mobile = `u_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    }
+  } else {
+    if (!mobile) throw ApiError.badRequest('Mobile number is required for personnel in this unit');
+    if (await mobileTaken(mobile, Roles.USER)) {
+      throw ApiError.conflict('An account with this mobile already exists');
+    }
+  }
 
   // SINGLE personnel cannot record a spouse (model hook also enforces this).
   const married = input.maritalStatus === MaritalStatus.MARRIED;
   const spouseMobile = married ? (input.spouseMobile ?? null) : null;
+  const spouseUsername = married ? (input.spouseUsername?.trim() ?? undefined) : undefined;
 
-  // The spouse mobile must be a free login identity in the users collection too (spouse logs
-  // in with the same password as the member but their own mobile).
   if (spouseMobile && (await mobileTaken(spouseMobile, Roles.USER))) {
     throw ApiError.conflict('The spouse mobile is already used by another account');
   }
 
-  // familySize is computed by the model pre-validate hook — never set here.
+  if (spouseUsername) {
+    const { usernameTaken } = await import('../auth/account.service.js');
+    if (await usernameTaken(spouseUsername)) {
+      throw ApiError.conflict('The spouse username is already used by another account');
+    }
+  }
+
   return UserModel.create({
-    mobile: input.mobile,
+    mobile,
+    username: username ?? undefined,
     passwordHash,
     unit: input.unit,
     rank: input.rank,
     maritalStatus: input.maritalStatus,
     spouseMobile,
+    spouseUsername,
     numberOfKids: input.numberOfKids,
   });
 }
@@ -84,18 +114,20 @@ export async function createPersonnelBulk(input: BulkPersonnelInput): Promise<Bu
     try {
       await createPersonnel({
         mobile: row.mobile,
-        password: row.password,
+        username: row.username,
+        password: row.password ?? 'Pass@2026',
         role: Roles.USER,
         unit: input.unit,
         rank: row.rank ?? Rank.JAWAN,
         maritalStatus: row.maritalStatus ?? MaritalStatus.SINGLE,
         spouseMobile: row.spouseMobile,
+        spouseUsername: row.spouseUsername,
         numberOfKids: row.numberOfKids ?? 0,
       });
       result.created += 1;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed';
-      result.failed.push({ mobile: row.mobile, error: message });
+      result.failed.push({ mobile: row.mobile || row.username || 'Row', error: message });
     }
   }
   return result;
@@ -176,6 +208,15 @@ export async function updatePersonnel(
       }
       user.spouseMobile = input.spouseMobile;
     }
+    if (input.spouseUsername !== undefined) {
+      if (input.spouseUsername) {
+        const { usernameTaken } = await import('../auth/account.service.js');
+        if (await usernameTaken(input.spouseUsername, user.id)) {
+          throw ApiError.conflict('The spouse username is already used by another account');
+        }
+      }
+      user.spouseUsername = input.spouseUsername ?? undefined;
+    }
   }
 
   await doc.save();
@@ -189,16 +230,28 @@ export async function deletePersonnel(id: string): Promise<void> {
   if (!scanner) throw ApiError.notFound('Personnel not found');
 }
 
+export async function unlockPersonnel(id: string): Promise<ManagedDoc> {
+  const doc = await findManaged(id);
+  if (!doc) throw ApiError.notFound('Personnel not found');
+  doc.failedLoginCount = 0;
+  doc.lockedUntil = null;
+  await doc.save();
+  return doc;
+}
+
 /** Public-safe projection (never leaks passwordHash; family fields are internal). */
 export function toPersonnelView(doc: ManagedDoc, role: Role = Roles.ADMIN) {
   const isUser = doc.role === Roles.USER;
   const base = {
     id: doc.id,
     mobile: doc.mobile,
+    username: isUser ? ((doc as UserDoc).username ?? null) : null,
     role: doc.role,
     rank: isUser ? (doc as UserDoc).rank : null,
     unit: isUser ? (doc as UserDoc).unit : null,
     active: doc.active,
+    failedLoginCount: doc.failedLoginCount ?? 0,
+    lockedUntil: doc.lockedUntil ?? null,
   };
   if (role !== Roles.ADMIN || !isUser) return base;
   const user = doc as UserDoc;
@@ -206,6 +259,7 @@ export function toPersonnelView(doc: ManagedDoc, role: Role = Roles.ADMIN) {
     ...base,
     maritalStatus: user.maritalStatus,
     spouseMobile: user.spouseMobile,
+    spouseUsername: user.spouseUsername ?? null,
     numberOfKids: user.numberOfKids,
     familySize: user.familySize,
     lastLoginAt: user.lastLoginAt,

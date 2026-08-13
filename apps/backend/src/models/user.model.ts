@@ -24,6 +24,9 @@ const userSchema = new Schema(
     // scanners live in their own `admins` / `scanners` collections.
     role: { type: String, default: Roles.USER, immutable: true },
 
+    // Optional Username for units operating under USERNAME login mode.
+    // Encrypted at rest; lookups/uniqueness use the `usernameHash` blind index.
+    username: { type: String, trim: true },
     // Personnel-only fields:
     unit: { type: Schema.Types.ObjectId, ref: 'Unit', default: null, index: true },
     rank: { type: String, enum: Object.values(Rank), default: Rank.JAWAN, index: true },
@@ -32,8 +35,9 @@ const userSchema = new Schema(
       enum: Object.values(MaritalStatus),
       default: MaritalStatus.SINGLE,
     },
-    // Encrypted at rest; alternate-login lookups use the `spouseMobileHash` blind index.
+    // Encrypted at rest; alternate-login lookups use the `spouseMobileHash` / `spouseUsernameHash` blind index.
     spouseMobile: { type: String, default: null },
+    spouseUsername: { type: String, trim: true },
     numberOfKids: { type: Number, default: 0, min: 0, max: 20 },
 
     // Derived — see pre-validate hook. Never set from client input.
@@ -41,6 +45,8 @@ const userSchema = new Schema(
 
     active: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },
+    failedLoginCount: { type: Number, default: 0 },
+    lockedUntil: { type: Date, default: null },
   },
   { timestamps: true },
 );
@@ -59,9 +65,10 @@ function computeFamilySize(doc: {
 }
 
 userSchema.pre('validate', function recomputeFamilySize(next) {
-  // SINGLE personnel cannot have a spouse mobile.
+  // SINGLE personnel cannot have a spouse mobile or spouse username.
   if (this.maritalStatus !== MaritalStatus.MARRIED) {
     this.spouseMobile = null;
+    this.spouseUsername = undefined;
   }
   this.familySize = computeFamilySize(this);
   next();
@@ -74,10 +81,12 @@ export type UserDoc = HydratedDocument<User>;
 export type UserId = Types.ObjectId;
 
 applyBaseTransforms(userSchema);
-// Encrypt mobile + spouse mobile at rest; add unique/sparse blind indexes for lookup.
+// Encrypt mobile, spouse mobile, username, and spouse username at rest; add blind indexes for lookup.
 applyFieldEncryption(userSchema, [
   { field: 'mobile', hash: 'mobileHash', unique: true },
   { field: 'spouseMobile', hash: 'spouseMobileHash' },
+  { field: 'username', hash: 'usernameHash', unique: true },
+  { field: 'spouseUsername', hash: 'spouseUsernameHash' },
 ]);
 
 export const UserModel = model('User', userSchema);

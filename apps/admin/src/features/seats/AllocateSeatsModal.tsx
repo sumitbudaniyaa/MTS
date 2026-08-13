@@ -20,7 +20,6 @@ export function AllocateSeatsModal({
   capacity,
   onClose,
   onSaved,
-  /** Shown when the modal follows straight on from creating a movie. */
   isNewMovie = false,
 }: {
   movieId: string;
@@ -31,6 +30,7 @@ export function AllocateSeatsModal({
   isNewMovie?: boolean;
 }) {
   const qc = useQueryClient();
+  // Keyed by `${unitId}:${rank}`
   const [values, setValues] = useState<Record<string, number>>({});
 
   const { data: units } = useQuery({
@@ -47,33 +47,87 @@ export function AllocateSeatsModal({
         .allocations,
   });
 
-  // Seed editable values from any existing allocations.
+  // Seed editable values from existing allocations.
   useEffect(() => {
     if (!units) return;
     const seed: Record<string, number> = {};
-    units.items.forEach((u) => (seed[u.id] = 0));
+    units.items.forEach((u) => {
+      seed[`${u.id}:OFFICER`] = 0;
+      seed[`${u.id}:JCO`] = 0;
+      seed[`${u.id}:JAWAN`] = 0;
+    });
     allocQuery.data?.forEach((a) => {
-      const id = typeof a.unit === 'string' ? a.unit : a.unit.id;
-      seed[id] = a.allocated;
+      const uId = typeof a.unit === 'string' ? a.unit : a.unit.id;
+      const rank = a.rank ?? 'JAWAN';
+      seed[`${uId}:${rank}`] = a.allocated;
     });
     setValues(seed);
   }, [units, allocQuery.data, movieId]);
 
+  const activeUnits = useMemo(() => units?.items.filter((u) => u.active) ?? [], [units]);
+
+  const totalsByRank = useMemo(() => {
+    const res = { OFFICER: 0, JCO: 0, JAWAN: 0 };
+    Object.entries(values).forEach(([key, num]) => {
+      const rank = key.split(':')[1] as keyof typeof res;
+      if (rank && res[rank] !== undefined) {
+        res[rank] += Number(num) || 0;
+      }
+    });
+    return res;
+  }, [values]);
+
   const total = useMemo(
-    () => Object.values(values).reduce((s, n) => s + (Number(n) || 0), 0),
-    [values],
+    () => totalsByRank.OFFICER + totalsByRank.JCO + totalsByRank.JAWAN,
+    [totalsByRank],
   );
   const matches = total === capacity && capacity > 0;
 
+  // Auto-distribute equally across active units based on current rank target totals (or equal split)
+  const handleEqualDistribute = () => {
+    if (!activeUnits.length) return;
+    const count = activeUnits.length;
+    // Default split ratios if totals are zero: Jawan ~45%, JCO ~30%, Officer ~25%
+    const currentOfficerTotal = totalsByRank.OFFICER || Math.floor(capacity * 0.25);
+    const currentJcoTotal = totalsByRank.JCO || Math.floor(capacity * 0.30);
+    const currentJawanTotal = capacity - currentOfficerTotal - currentJcoTotal;
+
+    const distributePool = (totalAmount: number, rank: 'OFFICER' | 'JCO' | 'JAWAN') => {
+      const base = Math.floor(totalAmount / count);
+      let remainder = totalAmount % count;
+      const res: Record<string, number> = {};
+      activeUnits.forEach((u) => {
+        const extra = remainder > 0 ? 1 : 0;
+        if (remainder > 0) remainder -= 1;
+        res[`${u.id}:${rank}`] = base + extra;
+      });
+      return res;
+    };
+
+    const next: Record<string, number> = {
+      ...distributePool(currentOfficerTotal, 'OFFICER'),
+      ...distributePool(currentJcoTotal, 'JCO'),
+      ...distributePool(currentJawanTotal, 'JAWAN'),
+    };
+
+    setValues(next);
+    toast.success('Seats distributed equally across units');
+  };
+
   const save = useMutation({
     mutationFn: () => {
-      const allocations = Object.entries(values)
-        .filter(([, n]) => Number(n) > 0)
-        .map(([unit, allocated]) => ({ unit, allocated: Number(allocated) }));
+      const allocations: { unit: string; rank: 'OFFICER' | 'JCO' | 'JAWAN'; allocated: number }[] = [];
+      Object.entries(values).forEach(([key, count]) => {
+        const [unit, rank] = key.split(':') as [string, 'OFFICER' | 'JCO' | 'JAWAN'];
+        const allocated = Number(count) || 0;
+        if (unit && rank && allocated > 0) {
+          allocations.push({ unit, rank, allocated });
+        }
+      });
       return api.put(`/seat-allocations/${movieId}`, { allocations });
     },
     onSuccess: () => {
-      toast.success('Allocations saved');
+      toast.success('Rank-wise seat allocations saved');
       qc.invalidateQueries({ queryKey: ['allocations', movieId] });
       qc.invalidateQueries({ queryKey: ['movies'] });
       onSaved?.();
@@ -93,24 +147,18 @@ export function AllocateSeatsModal({
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
-            {/* Allocation is optional: an un-allocated movie still sells from the open pool. */}
             {isNewMovie ? 'Skip for now' : 'Close'}
           </Button>
-          <Button
-           
-            onClick={() => save.mutate()}
-            disabled={!matches}
-            loading={save.isPending}
-          >
-            <Save className="h-3.5 w-3.5" /> Save
+          <Button onClick={() => save.mutate()} disabled={!matches} loading={save.isPending}>
+            <Save className="h-3.5 w-3.5" /> Save allocations
           </Button>
         </>
       }
     >
       {isNewMovie && (
         <p className="-mt-1 mb-4 text-sm text-muted">
-          Movie created. Split its {capacity} seats across units now, or skip — unallocated
-          seats stay in the common pool and anyone can book them.
+          Movie created. Split its {capacity} seats rank-wise and unit-wise now, or skip — unallocated
+          seats stay in the common pool.
         </p>
       )}
 
@@ -118,38 +166,86 @@ export function AllocateSeatsModal({
       {allocQuery.isError && <ErrorState message={apiErrorMessage(allocQuery.error)} />}
       {noUnits && (
         <p className="text-sm text-muted">
-          No units exist yet, so there is nothing to allocate to. All {capacity} seats remain in
-          the common pool.
+          No units exist yet. All {capacity} seats remain in the common pool.
         </p>
       )}
 
       {units && !noUnits && (
         <>
-          <div className="mb-3 text-sm">
-            Allocated <span className="font-semibold">{total}</span> / {capacity}
-            <span className="ml-3">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-sm">
+            <div className="flex items-center gap-2">
+              <span>
+                Total Allocated: <span className="font-semibold text-fg">{total}</span> / {capacity}
+              </span>
               {matches ? (
                 <Badge tone="success">Matches capacity</Badge>
               ) : (
                 <Badge tone="warning">Must equal {capacity}</Badge>
               )}
-            </span>
+            </div>
+
+            <Button size="sm" variant="secondary" onClick={handleEqualDistribute}>
+              Distribute Equally Across Units
+            </Button>
           </div>
-          <div className="grid max-h-[55vh] grid-cols-1 gap-2 overflow-auto sm:grid-cols-2">
-            {units.items.map((u) => (
-              <div
-                key={u.id}
-                className="flex items-center justify-between gap-2 rounded-xl border border-border p-2.5"
-              >
-                <div className="truncate text-sm font-medium">{u.name}</div>
-                <NumberInput
-                  className="h-8 w-20"
-                  value={values[u.id] ?? 0}
-                  disabled={save.isPending}
-                  onChange={(n) => setValues((v) => ({ ...v, [u.id]: n }))}
-                />
-              </div>
-            ))}
+
+          <div className="mb-3 flex items-center justify-around rounded-lg border border-border bg-subtle/40 p-2.5 text-xs font-medium">
+            <div>Officer Pool: <span className="text-fg font-semibold">{totalsByRank.OFFICER}</span></div>
+            <div>JCO Pool: <span className="text-fg font-semibold">{totalsByRank.JCO}</span></div>
+            <div>Jawan Pool: <span className="text-fg font-semibold">{totalsByRank.JAWAN}</span></div>
+          </div>
+
+          <div className="max-h-[50vh] overflow-x-auto overflow-y-auto rounded-xl border border-border">
+            <table className="w-full text-left text-xs">
+              <thead className="sticky top-0 bg-subtle text-muted">
+                <tr>
+                  <th className="p-3 font-medium">Unit</th>
+                  <th className="p-3 font-medium">Officer Seats</th>
+                  <th className="p-3 font-medium">JCO Seats</th>
+                  <th className="p-3 font-medium">Jawan Seats</th>
+                  <th className="p-3 text-right font-medium">Unit Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {activeUnits.map((u) => {
+                  const off = values[`${u.id}:OFFICER`] ?? 0;
+                  const jco = values[`${u.id}:JCO`] ?? 0;
+                  const jwn = values[`${u.id}:JAWAN`] ?? 0;
+                  const uTotal = off + jco + jwn;
+
+                  return (
+                    <tr key={u.id} className="hover:bg-subtle/30">
+                      <td className="p-3 font-medium text-fg">{u.name}</td>
+                      <td className="p-2">
+                        <NumberInput
+                          className="h-8 w-20"
+                          value={off}
+                          disabled={save.isPending}
+                          onChange={(n) => setValues((v) => ({ ...v, [`${u.id}:OFFICER`]: n }))}
+                        />
+                      </td>
+                      <td className="p-2">
+                        <NumberInput
+                          className="h-8 w-20"
+                          value={jco}
+                          disabled={save.isPending}
+                          onChange={(n) => setValues((v) => ({ ...v, [`${u.id}:JCO`]: n }))}
+                        />
+                      </td>
+                      <td className="p-2">
+                        <NumberInput
+                          className="h-8 w-20"
+                          value={jwn}
+                          disabled={save.isPending}
+                          onChange={(n) => setValues((v) => ({ ...v, [`${u.id}:JAWAN`]: n }))}
+                        />
+                      </td>
+                      <td className="p-3 text-right font-semibold text-fg">{uTotal}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </>
       )}

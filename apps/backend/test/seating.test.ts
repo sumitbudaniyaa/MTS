@@ -282,8 +282,8 @@ describe('unit quota (reported: two people booked against a 1-seat allocation)',
     // Alpha gets exactly ONE seat; the sum must equal capacity, so Bravo takes the rest.
     await setAllocations(movie.id, {
       allocations: [
-        { unit: alpha.id, allocated: 1 },
-        { unit: bravo.id, allocated: 3 },
+        { unit: alpha.id, rank: Rank.JAWAN, allocated: 1 },
+        { unit: bravo.id, rank: Rank.JAWAN, allocated: 3 },
       ],
     });
     return { alpha, bravo, movie };
@@ -342,7 +342,7 @@ describe('unit quota shapes the picker cap', () => {
     });
     await seating.generateMovieSeats(movie.id);
     await setAllocations(movie.id, {
-      allocations: [{ unit: alpha.id, allocated: 4 }, { unit: bravo.id, allocated: 2 }],
+      allocations: [{ unit: alpha.id, rank: Rank.JAWAN, allocated: 4 }, { unit: bravo.id, rank: Rank.JAWAN, allocated: 2 }],
     });
     await SeatAllocationModel.updateOne(
       { movie: movie._id, unit: alpha._id },
@@ -408,7 +408,7 @@ describe('open to all takes effect immediately, before any pool release', () => 
     });
     await seating.generateMovieSeats(movie.id);
     await setAllocations(movie.id, {
-      allocations: [{ unit: alpha.id, allocated: 2 }, { unit: bravo.id, allocated: 2 }],
+      allocations: [{ unit: alpha.id, rank: Rank.JAWAN, allocated: 2 }, { unit: bravo.id, rank: Rank.JAWAN, allocated: 2 }],
     });
     // Alpha's 2 seats are gone.
     await SeatAllocationModel.updateOne(
@@ -510,7 +510,7 @@ describe('per-unit figures once the pool is open', () => {
     await seating.generateMovieSeats(movie.id);
     // Alpha is allocated ONE seat.
     await setAllocations(movie.id, {
-      allocations: [{ unit: alpha.id, allocated: 1 }, { unit: bravo.id, allocated: 3 }],
+      allocations: [{ unit: alpha.id, rank: Rank.JAWAN, allocated: 1 }, { unit: bravo.id, rank: Rank.JAWAN, allocated: 3 }],
     });
 
     const u = await makeUser('9000000111', alpha._id, Rank.JAWAN, 4);

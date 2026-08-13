@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, LockKeyholeOpen } from 'lucide-react';
 import { api, apiErrorMessage } from '@/lib/api';
 import { PageHeader, Card, Badge, LoadingState } from '@/components/ui/Misc';
 import { Button } from '@/components/ui/Button';
@@ -19,6 +19,8 @@ interface AdminRow {
   name: string;
   role?: 'SUPER_ADMIN' | 'ADMIN';
   active: boolean;
+  failedLoginCount?: number;
+  lockedUntil?: string | null;
   createdAt: string;
 }
 
@@ -306,6 +308,15 @@ function AdminsCard() {
     onError: (e) => toast.error(apiErrorMessage(e)),
   });
 
+  const unlock = useMutation({
+    mutationFn: (adminId: string) => api.post(`/admins/${adminId}/unlock`),
+    onSuccess: () => {
+      toast.success('Administrator unlocked');
+      qc.invalidateQueries({ queryKey: ['admins'] });
+    },
+    onError: (e) => toast.error(apiErrorMessage(e)),
+  });
+
   return (
     <Card>
       <div className="mb-3 flex items-center justify-between">
@@ -317,38 +328,54 @@ function AdminsCard() {
 
       {isLoading && <LoadingState />}
       <div className="divide-y divide-border">
-        {data?.map((a) => (
-          <div key={a.id} className="flex items-center justify-between py-2.5">
-            <div>
-              <div className="flex items-center gap-2 text-sm font-medium">
-                {a.name || 'Administrator'}
-                <Badge tone={a.role === 'SUPER_ADMIN' ? 'success' : 'neutral'}>
-                  {a.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'}
-                </Badge>
-                {a.id === me?.id && <Badge tone="accent">You</Badge>}
-                {!a.active && <Badge tone="neutral">Inactive</Badge>}
+        {data?.map((a) => {
+          const isLocked = a.lockedUntil && new Date(a.lockedUntil).getTime() > Date.now();
+          return (
+            <div key={a.id} className="flex items-center justify-between py-2.5">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  {a.name || 'Administrator'}
+                  <Badge tone={a.role === 'SUPER_ADMIN' ? 'success' : 'neutral'}>
+                    {a.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'}
+                  </Badge>
+                  {a.id === me?.id && <Badge tone="accent">You</Badge>}
+                  {!a.active && <Badge tone="neutral">Inactive</Badge>}
+                  {isLocked && <Badge tone="warning">Locked</Badge>}
+                </div>
+                <div className="text-xs text-muted">{a.mobile}</div>
               </div>
-              <div className="text-xs text-muted">{a.mobile}</div>
+              <div className="flex gap-1">
+                {isLocked && (
+                  <Tooltip label="Unlock Account">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => unlock.mutate(a.id)}
+                      disabled={unlock.isPending}
+                    >
+                      <LockKeyholeOpen className="h-3.5 w-3.5 text-warning" />
+                    </Button>
+                  </Tooltip>
+                )}
+                <Tooltip label="Edit">
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(a)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </Tooltip>
+                <Tooltip label={a.id === me?.id ? 'You cannot remove your own account' : 'Delete'}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={a.id === me?.id}
+                    onClick={() => setDeleting(a)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-danger" />
+                  </Button>
+                </Tooltip>
+              </div>
             </div>
-            <div className="flex gap-1">
-              <Tooltip label="Edit">
-                <Button size="sm" variant="ghost" onClick={() => setEditing(a)}>
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-              </Tooltip>
-              <Tooltip label={a.id === me?.id ? 'You cannot remove your own account' : 'Delete'}>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={a.id === me?.id}
-                  onClick={() => setDeleting(a)}
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-danger" />
-                </Button>
-              </Tooltip>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {creating && (

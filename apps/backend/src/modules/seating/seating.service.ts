@@ -474,12 +474,13 @@ export async function seatAllowance(
       // Allocations exist but this person has no unit — they have no quota to draw from.
       unitRemaining = 0;
     } else {
-      const alloc = await SeatAllocationModel.findOne({ movie: movieId, unit: unitId }).select(
-        'allocated booked',
-      );
-      // Seats this person is holding are already counted in the unit's `booked`? No — `booked`
-      // only moves on a completed booking, so their live holds must be subtracted here too, or
-      // the cap would let them re-select seats the unit cannot actually pay for.
+      const userDoc = await UserModel.findById(userId).select('rank');
+      const userRankVal = userDoc?.rank ?? Rank.JAWAN;
+      const alloc = await SeatAllocationModel.findOne({
+        movie: movieId,
+        unit: unitId,
+        rank: userRankVal,
+      }).select('allocated booked');
       const unitFree = alloc ? Math.max(0, alloc.allocated - alloc.booked) : 0;
       unitRemaining = Math.max(0, unitFree - heldLabels.length);
     }
@@ -716,10 +717,14 @@ export async function bookSeats(args: {
         await rollback(userId, movieId, claimed);
         throw ApiError.badRequest('User is not assigned to a unit');
       }
+      const userDoc = await UserModel.findById(userId).select('rank');
+      const userRankVal = userDoc?.rank ?? Rank.JAWAN;
+
       const alloc = await SeatAllocationModel.findOneAndUpdate(
         {
           movie: movie._id,
           unit: unitId,
+          rank: userRankVal,
           $expr: { $gte: [{ $subtract: ['$allocated', '$booked'] }, labels.length] },
         },
         { $inc: { booked: labels.length } },
@@ -727,17 +732,17 @@ export async function bookSeats(args: {
       );
       if (!alloc) {
         await rollback(userId, movieId, claimed);
-        // Report the real figure. A flat "no remaining seats" was wrong whenever *some* were
-        // left but fewer than asked for, and sent people away instead of back to pick fewer.
-        const current = await SeatAllocationModel.findOne({ movie: movie._id, unit: unitId }).select(
-          'allocated booked',
-        );
+        const current = await SeatAllocationModel.findOne({
+          movie: movie._id,
+          unit: unitId,
+          rank: userRankVal,
+        }).select('allocated booked');
         const left = current ? Math.max(0, current.allocated - current.booked) : 0;
         throw ApiError.conflict(
           left === 0
-            ? 'No seats left for your unit for this movie'
-            : `Your unit has only ${left} seat(s) left for this movie`,
-          { unitRemaining: left, requested: labels.length },
+            ? `No ${userRankVal} seats left for your unit for this movie`
+            : `Your unit has only ${left} ${userRankVal} seat(s) left for this movie`,
+          { unitRemaining: left, requested: labels.length, rank: userRankVal },
         );
       }
       quotaTaken = labels.length;

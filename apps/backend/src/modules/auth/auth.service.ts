@@ -11,6 +11,8 @@ import {
 import { ApiError } from '../../utils/apiError.js';
 import type { AuthPrincipal, Role } from '../../types/index.js';
 import { hashPassword } from '../../utils/password.js';
+import { recordAudit } from '../audit/audit.service.js';
+import { AuditAction } from '../../constants/enums.js';
 import {
   findAccountById,
   findAccountByMobile,
@@ -75,10 +77,43 @@ export async function login(
   role?: Role,
 ): Promise<AuthTokens> {
   const account = await findAccountByMobile(mobile, role);
+
+  if (account?.lockedUntil && account.lockedUntil.getTime() > Date.now()) {
+    const remainingMins = Math.max(
+      1,
+      Math.ceil((account.lockedUntil.getTime() - Date.now()) / 60_000),
+    );
+    throw ApiError.forbidden(
+      `Account is locked due to repeated failed login attempts. Try again in ${remainingMins} minute(s) or contact a Super Admin.`,
+    );
+  }
+
   // Always run a verify to keep timing roughly constant whether or not the account exists.
   const hash = account?.passwordHash ?? '$2a$12$invalidinvalidinvalidinvalidinvalidinvalidinv';
   const ok = await verifyPassword(password, hash);
-  if (!account || !ok) throw ApiError.unauthorized('Invalid credentials');
+
+  if (!account || !ok) {
+    if (account) {
+      const { failedCount, lockedUntil } = await account.recordFailedLogin();
+      await recordAudit({
+        action: AuditAction.LOGIN_FAILED,
+        req,
+        metadata: { mobile, role, failedCount, locked: Boolean(lockedUntil) },
+      });
+
+      if (lockedUntil) {
+        const remainingMins = Math.max(
+          1,
+          Math.ceil((lockedUntil.getTime() - Date.now()) / 60_000),
+        );
+        throw ApiError.forbidden(
+          `Account locked after 5 failed attempts. Try again in ${remainingMins} minute(s) or contact a Super Admin.`,
+        );
+      }
+    }
+    throw ApiError.unauthorized('Invalid credentials');
+  }
+
   if (!account.active) throw ApiError.forbidden('Account is disabled');
 
   await account.touchLogin();

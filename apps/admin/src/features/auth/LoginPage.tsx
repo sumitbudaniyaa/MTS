@@ -5,10 +5,9 @@ import { PasswordInput } from '@/components/ui/PasswordInput';
 import { Button } from '@/components/ui/Button';
 import { login } from './useAuth';
 import { apiErrorMessage } from '@/lib/api';
-import { mobileField } from '@/lib/mobile';
 
 interface FormValues {
-  mobile: string;
+  identity: string;
   password: string;
 }
 
@@ -21,7 +20,7 @@ export function LoginPage() {
 
   const onSubmit = handleSubmit(async (values) => {
     try {
-      await login(values.mobile, values.password);
+      await login(values.identity.trim(), values.password);
       toast.success('Welcome back');
     } catch (err) {
       toast.error(apiErrorMessage(err, 'Login failed'));
@@ -37,17 +36,14 @@ export function LoginPage() {
         </div>
         <form onSubmit={onSubmit} className="space-y-4">
           <Input
-            label="Mobile number"
-            id="mobile"
-            placeholder="10-digit mobile"
-            error={errors.mobile?.message}
+            label="Mobile number or Username"
+            id="identity"
+            placeholder="Mobile or Username"
+            error={errors.identity?.message}
             disabled={isSubmitting}
-            {...mobileField(
-              register('mobile', {
-                required: 'Mobile is required',
-                pattern: { value: /^\d{10}$/, message: 'Enter a 10-digit mobile' },
-              }),
-            )}
+            {...register('identity', {
+              required: 'Mobile or Username is required',
+            })}
           />
           <PasswordInput
             label="Password"

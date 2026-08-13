@@ -60,4 +60,32 @@ describe('spouse dual-credential login (shared password)', () => {
       close();
     }
   });
+
+  it('lets the spouse log in using spouseUsername in username-mode units', async () => {
+    const unit = await UnitModel.create({ name: 'Engineers', loginMode: 'USERNAME' });
+    const user = await UserModel.create({
+      mobile: 'u_test_123',
+      username: 'member123',
+      passwordHash: await hashPassword('Pass@2026'),
+      role: Roles.USER,
+      unit: unit._id,
+      maritalStatus: MaritalStatus.MARRIED,
+      spouseUsername: 'spouse123',
+      numberOfKids: 0,
+    });
+
+    const { url, close } = await startApp();
+    try {
+      const primary = await loginJson(url, 'member123', 'Pass@2026');
+      expect(primary.status).toBe(200);
+      expect(primary.body.user?.id).toBe(user.id);
+
+      // Spouse: spouseUsername + same password -> same account id.
+      const spouse = await loginJson(url, 'spouse123', 'Pass@2026');
+      expect(spouse.status).toBe(200);
+      expect(spouse.body.user?.id).toBe(user.id);
+    } finally {
+      close();
+    }
+  });
 });

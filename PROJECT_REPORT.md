@@ -57,6 +57,7 @@ behind them to prevent horizontal drift.
 ### Booking & Seating
 - Visual auditorium designer (rows/seats, **rank restrictions** per row: Officer / JCO / Jawan).
 - Per-movie seat inventory **auto-generated** from the layout — no manual step.
+- **Rank-aware per-unit allocations & equal distribution** — seat quotas per unit can be allocated per rank tier (`OFFICER`, `JCO`, `OR`, `ALL`), with an inline one-click equal distribution option across all active units.
 - **Live seat map** (real-time) with short **seat holds** while a user completes booking.
 - Creating a movie **prompts for seat allocation inline** (optional); reports unlock once a
   show ends and state exactly when that will be.
@@ -81,9 +82,11 @@ behind them to prevent horizontal drift.
 ### People & Administration
 - **Two administrative tiers** (see §4) with strict separation of duties.
 - **Units** (organisational grouping) and **personnel** management.
+- **Flexible Unit Login Modes** — units can be configured for `MOBILE` or `USERNAME`/service-number login mode.
+- **Default password (`Pass@2026`)** — personnel created manually or imported via Excel/CSV without a password default to `'Pass@2026'`.
 - **Bulk personnel import** from an Excel/CSV spreadsheet (with per-row error reporting and a
   downloadable template).
-- **Spouse dual-login** — a married member's spouse logs in with their own mobile and the member's
+- **Spouse dual-login** — a married member's spouse logs in with their own mobile or username and the member's
   password, sharing the same family booking allowance.
 - **Scanner operator** account management.
 
@@ -177,13 +180,14 @@ The platform was built to a defensive security standard and passed an internal s
 
 | Area | Control |
 |------|---------|
-| **Data at rest** | **Mobile numbers** (all roles + spouse) and **unit names** are **AES-256-GCM encrypted** in the database, with a keyed HMAC "blind index" enabling login/uniqueness without exposing plaintext. |
+| **Data at rest** | **Mobile numbers** (all roles + spouse) and **unit names** are **AES-256-GCM encrypted** in the database, with a keyed HMAC "blind index" enabling login/uniqueness without exposing plaintext. Unpopulated fields use `undefined` hash values to preserve sparse index integrity. |
 | **Passwords** | **bcrypt** hashing (cost 12); never stored or returned in plaintext; new passwords require ≥ 8 characters. |
 | **Sessions** | Short-lived access tokens (in-memory on the client) + **rotating refresh tokens** stored **hashed**; **theft/reuse detection** revokes a compromised session family. |
 | **Cookies** | Refresh token is an **HttpOnly, Secure, SameSite** cookie scoped to the auth path; host-only to avoid browser rejection. |
 | **Tokens** | JWTs pinned to a single algorithm (no algorithm-confusion attacks). |
 | **Access control** | Every route requires authentication + **explicit role authorization**; two-tier admin separation enforced server-side. |
-| **Login abuse** | Rate limiting **keyed per account** (not just IP, so shared networks aren't locked out); **failed logins are audited**. |
+| **Login abuse & Lockout** | Account rate limiting keyed per account; **5 failed attempts lock account** (unlocked by Super Admin or seed script); **failed logins are audited**. |
+| **Dependencies** | **0 vulnerabilities** across all four frontend/backend apps (`npm audit --omit=dev`), with `node-cron` v4 and `react-router` v7. |
 | **Injection** | All input validated (schema-level); NoSQL operators stripped; search terms escaped to prevent regex injection / denial-of-service. |
 | **Real-time** | Socket connections are **authenticated** — no anonymous access to the live seat map. |
 | **Transport** | CORS restricted to whitelisted app origins; standard secure HTTP headers. |

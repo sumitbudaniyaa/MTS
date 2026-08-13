@@ -18,6 +18,17 @@ export async function connectDatabase(uri: string = env.MONGO_URI): Promise<type
     serverSelectionTimeoutMS: 10_000,
     autoIndex: env.NODE_ENV !== 'production',
   });
+  try {
+    const units = mongoose.connection.collection('units');
+    const indexes = await units.indexes();
+    for (const idx of indexes) {
+      if (idx.name === 'code_1' || idx.name === 'name_1') {
+        await units.dropIndex(idx.name);
+      }
+    }
+  } catch {
+    // collection might not exist on clean setup
+  }
   return mongoose;
 }
 

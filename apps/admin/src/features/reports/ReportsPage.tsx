@@ -114,7 +114,7 @@ export function ReportsPage() {
             
             <div>
               <h2 className="mb-3 text-sm font-medium text-muted">Seat Economy</h2>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
                 <Card>
                   <div className="text-2xl font-semibold">{report.data.movie.totalSeats}</div>
                   <div className="text-xs text-muted">Total seats</div>
@@ -129,10 +129,6 @@ export function ReportsPage() {
                     )}
                   </div>
                   <div className="text-xs text-muted">Booked seats</div>
-                </Card>
-                <Card>
-                  <div className="text-2xl font-semibold">{report.data.movie.poolSeats}</div>
-                  <div className="text-xs text-muted">Common pool</div>
                 </Card>
                 <Card>
                   <div className="text-2xl font-semibold">

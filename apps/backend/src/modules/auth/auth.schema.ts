@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { Roles } from '../../types/index.js';
 
 export const loginSchema = z.object({
-  mobile: z.string().regex(/^\d{10}$/, 'Mobile must be 10 digits'),
+  mobile: z.string().min(3, 'Identifier must be at least 3 characters').max(64),
   password: z.string().min(6).max(128),
   // Which app is logging in. Accounts are per-collection, so the same mobile can be an admin,
   // a scanner AND a user — the role scopes the lookup to the right collection.

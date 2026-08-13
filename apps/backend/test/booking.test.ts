@@ -8,7 +8,7 @@ import {
 } from '../src/models/index.js';
 import { createBooking } from '../src/modules/bookings/booking.service.js';
 import { hashPassword } from '../src/utils/password.js';
-import { MovieStatus } from '../src/constants/enums.js';
+import { MovieStatus, Rank } from '../src/constants/enums.js';
 import { Roles } from '../src/types/index.js';
 
 /** Seed a unit + a SCHEDULED, currently-visible movie with a single-unit allocation. */
@@ -25,6 +25,7 @@ async function seedScenario(opts: { totalSeats: number; allocated: number }) {
   await SeatAllocationModel.create({
     movie: movie._id,
     unit: unit._id,
+    rank: Rank.JAWAN,
     allocated: opts.allocated,
   });
   return { unit, movie };

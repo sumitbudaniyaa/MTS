@@ -17,6 +17,7 @@ import { useRole } from '@/lib/role';
 
 interface UnitForm {
   name: string;
+  loginMode: 'MOBILE' | 'USERNAME';
 }
 
 export function UnitsPage() {
@@ -96,6 +97,9 @@ export function UnitsPage() {
                 <div className="mb-4 flex items-start justify-between">
                   <div>
                     <h3 className="font-medium text-fg">{u.name}</h3>
+                    <span className="text-xs text-muted">
+                      Mode: {u.loginMode === 'USERNAME' ? 'Username' : 'Mobile Number'}
+                    </span>
                   </div>
                   <Badge tone={u.active ? 'success' : 'neutral'}>
                     {u.active ? 'Active' : 'Inactive'}
@@ -192,13 +196,13 @@ function UnitFormModal({
     handleSubmit,
     formState: { errors },
   } = useForm<UnitForm>({
-    defaultValues: { name: unit?.name ?? '' },
+    defaultValues: { name: unit?.name ?? '', loginMode: unit?.loginMode ?? 'MOBILE' },
   });
 
   const save = useMutation({
     mutationFn: (values: UnitForm) =>
       isEdit
-        ? api.patch(`/units/${unit!.id}`, { name: values.name })
+        ? api.patch(`/units/${unit!.id}`, values)
         : api.post('/units', values),
     onSuccess: () => {
       toast.success(isEdit ? 'Unit updated' : 'Unit created');
@@ -224,13 +228,30 @@ function UnitFormModal({
         </>
       }
     >
-      <Input
-        label="Name"
-        placeholder="e.g. Signals"
-        error={errors.name?.message}
-        disabled={save.isPending}
-        {...register('name', { required: 'Name is required' })}
-      />
+      <div className="space-y-4">
+        <Input
+          label="Name"
+          placeholder="e.g. Signals"
+          error={errors.name?.message}
+          disabled={save.isPending}
+          {...register('name', { required: 'Name is required' })}
+        />
+
+        <div>
+          <label className="mb-1 block text-sm font-medium text-fg">Personnel Login Mode</label>
+          <select
+            className="input w-full"
+            disabled={save.isPending}
+            {...register('loginMode')}
+          >
+            <option value="MOBILE">Mobile Number</option>
+            <option value="USERNAME">Username</option>
+          </select>
+          <p className="mt-1 text-xs text-muted">
+            Determines whether personnel in this unit log in via Mobile Number or Username.
+          </p>
+        </div>
+      </div>
     </Modal>
   );
 }

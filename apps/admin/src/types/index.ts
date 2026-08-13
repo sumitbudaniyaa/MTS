@@ -19,6 +19,7 @@ export interface Paginated<T> {
 export interface Unit {
   id: string;
   name: string;
+  loginMode?: 'MOBILE' | 'USERNAME';
   active: boolean;
   createdAt: string;
 }
@@ -29,6 +30,7 @@ export type Rank = 'OFFICER' | 'JCO' | 'JAWAN';
 export interface Personnel {
   id: string;
   mobile: string;
+  username?: string | null;
   name: string;
   role: Role;
   rank?: Rank | null;
@@ -36,9 +38,12 @@ export interface Personnel {
   active: boolean;
   maritalStatus?: MaritalStatus;
   spouseMobile?: string | null;
+  spouseUsername?: string | null;
   numberOfKids?: number;
   familySize?: number;
   lastLoginAt?: string | null;
+  failedLoginCount?: number;
+  lockedUntil?: string | null;
 }
 
 export type MovieStatus =
@@ -67,6 +72,7 @@ export interface Movie {
 export interface SeatAllocation {
   id: string;
   unit: { id: string; name: string } | string;
+  rank?: Rank;
   allocated: number;
   booked: number;
   released: number;

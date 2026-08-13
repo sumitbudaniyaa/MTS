@@ -4,11 +4,11 @@ import { ApiError } from '../../utils/apiError.js';
 import { buildMeta, type ListQuery, type Paginated } from '../../utils/pagination.js';
 import { blindIndex } from '../../utils/fieldCrypto.js';
 
-export async function createUnit(input: { name: string }): Promise<UnitDoc> {
+export async function createUnit(input: { name: string; loginMode?: 'MOBILE' | 'USERNAME' }): Promise<UnitDoc> {
   // Uniqueness is on the encrypted name's blind index (ciphertext isn't comparable).
   const exists = await UnitModel.findOne({ nameHash: blindIndex(input.name) });
   if (exists) throw ApiError.conflict('A unit with this name already exists');
-  return UnitModel.create({ name: input.name });
+  return UnitModel.create({ name: input.name, loginMode: input.loginMode ?? 'MOBILE' });
 }
 
 export async function listUnits(query: ListQuery): Promise<Paginated<UnitDoc>> {
@@ -35,10 +35,10 @@ export async function getUnit(id: string): Promise<UnitDoc> {
 
 export async function updateUnit(
   id: string,
-  input: { name?: string; active?: boolean },
+  input: { name?: string; loginMode?: 'MOBILE' | 'USERNAME'; active?: boolean },
 ): Promise<UnitDoc> {
   if (input.name) {
-    const clash = await UnitModel.findOne({ name: input.name, _id: { $ne: id } });
+    const clash = await UnitModel.findOne({ nameHash: blindIndex(input.name), _id: { $ne: id } });
     if (clash) throw ApiError.conflict('A unit with this name already exists');
   }
   const unit = await UnitModel.findByIdAndUpdate(id, input, { new: true, runValidators: true });

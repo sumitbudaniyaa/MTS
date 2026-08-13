@@ -18,8 +18,8 @@ export const notFoundHandler: RequestHandler = (req, _res, next) => {
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   let apiError: ApiError;
 
-  if (err instanceof ApiError) {
-    apiError = err;
+  if (err instanceof ApiError || (err && typeof err === 'object' && 'isOperational' in err && err.isOperational)) {
+    apiError = err as ApiError;
   } else if (err instanceof ZodError) {
     apiError = ApiError.badRequest('Validation failed', err.issues);
   } else if (err instanceof mongoose.Error.ValidationError) {

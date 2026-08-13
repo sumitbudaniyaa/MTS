@@ -68,7 +68,6 @@ export function downloadMovieReportPdf(report: MovieReportData): void {
     body: [
       ['Total capacity', String(m.totalSeats)],
       ['Booked', String(m.seatsBooked)],
-      ['Common pool', String(m.poolSeats)],
       ['Unsold / Empty seats', String(m.unsoldSeats ?? m.availableSeats)],
     ],
     theme: 'grid',

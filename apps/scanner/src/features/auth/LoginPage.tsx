@@ -4,10 +4,9 @@ import { Button } from '@/components/ui/Button';
 import { PasswordField } from '@/components/ui/PasswordField';
 import { login } from './useAuth';
 import { apiErrorMessage } from '@/lib/api';
-import { onlyDigits10 } from '@/lib/mobile';
 
 export function LoginPage() {
-  const [mobile, setMobile] = useState('');
+  const [identity, setIdentity] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -15,7 +14,7 @@ export function LoginPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      await login(mobile, password);
+      await login(identity.trim(), password);
       toast.success('Ready to scan');
     } catch (err) {
       toast.error(apiErrorMessage(err, 'Login failed'));
@@ -34,17 +33,15 @@ export function LoginPage() {
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
             <label className="label" htmlFor="mobile">
-              Mobile number
+              Mobile number or Username
             </label>
             <input
               id="mobile"
               className="input"
-              inputMode="numeric"
-              maxLength={10}
-              placeholder="10-digit mobile"
-              value={mobile}
+              placeholder="Mobile or Username"
+              value={identity}
               disabled={busy}
-              onChange={(e) => setMobile(onlyDigits10(e.target.value))}
+              onChange={(e) => setIdentity(e.target.value)}
             />
           </div>
           <PasswordField

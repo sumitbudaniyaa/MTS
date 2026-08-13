@@ -771,7 +771,6 @@ function MovieDetailModal({ movie, onClose }: { movie: Movie; onClose: () => voi
                     <Th>Unit</Th>
                     <Th>Allocated</Th>
                     <Th>Holding</Th>
-                    <Th>Released</Th>
                     <Th>Status</Th>
                   </tr>
                 }
@@ -785,7 +784,6 @@ function MovieDetailModal({ movie, onClose }: { movie: Movie; onClose: () => voi
                     <Td className={cn('tabular-nums', a.overQuota > 0 && 'font-semibold text-fg')}>
                       {a.booked}
                     </Td>
-                    <Td>{a.released}</Td>
                     <Td>
                       {a.overQuota > 0 ? (
                         <Badge tone="accent">+{a.overQuota} from pool</Badge>

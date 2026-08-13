@@ -73,7 +73,7 @@ export interface EncryptedFieldSpec {
  */
 export function applyFieldEncryption(schema: Schema, specs: EncryptedFieldSpec[]): void {
   for (const spec of specs) {
-    schema.add({ [spec.hash]: { type: String, default: null } });
+    schema.add({ [spec.hash]: { type: String } });
     schema.index(
       { [spec.hash]: 1 },
       spec.unique ? { unique: true, sparse: true } : { sparse: true },
@@ -88,7 +88,7 @@ export function applyFieldEncryption(schema: Schema, specs: EncryptedFieldSpec[]
       if (!doc.isModified(spec.field)) continue;
       const plain = doc.get(spec.field); // getter → plaintext (passthrough or decrypted)
       if (plain === null || plain === undefined || plain === '') {
-        doc.set(spec.hash, null);
+        doc.set(spec.hash, undefined);
         continue;
       }
       const p = String(plain).trim();
@@ -106,7 +106,7 @@ export function applyFieldEncryption(schema: Schema, specs: EncryptedFieldSpec[]
         for (const spec of specs) {
           const plain = d[spec.field];
           if (plain === null || plain === undefined || plain === '') {
-            d[spec.hash] = null;
+            d[spec.hash] = undefined;
             continue;
           }
           const p = String(plain).trim();

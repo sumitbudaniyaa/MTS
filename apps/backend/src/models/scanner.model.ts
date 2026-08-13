@@ -15,6 +15,8 @@ const scannerSchema = new Schema(
     role: { type: String, default: Roles.SCANNER, immutable: true },
     active: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },
+    failedLoginCount: { type: Number, default: 0 },
+    lockedUntil: { type: Date, default: null },
   },
   { timestamps: true },
 );

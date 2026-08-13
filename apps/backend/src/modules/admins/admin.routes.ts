@@ -118,3 +118,22 @@ adminRouter.delete(
     res.json({ success: true });
   }),
 );
+
+// Unlock a locked-out administrator account.
+adminRouter.post(
+  '/:id/unlock',
+  validate({ params: idParamSchema }),
+  asyncHandler(async (req, res) => {
+    const admin = await AdminModel.findById(req.params.id);
+    if (!admin) throw ApiError.notFound('Administrator not found');
+    admin.failedLoginCount = 0;
+    admin.lockedUntil = null;
+    await admin.save();
+    await recordAudit({
+      action: AuditAction.ADMIN_UPDATE,
+      req,
+      metadata: { adminId: admin.id, unlocked: true },
+    });
+    res.json({ success: true, admin });
+  }),
+);

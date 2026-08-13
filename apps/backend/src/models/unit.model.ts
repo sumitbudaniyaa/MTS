@@ -10,6 +10,7 @@ const unitSchema = new Schema(
   {
     // Encrypted at rest; uniqueness + exact-match search use the `nameHash` blind index.
     name: { type: String, required: true, trim: true },
+    loginMode: { type: String, enum: ['MOBILE', 'USERNAME'], default: 'MOBILE' },
     active: { type: Boolean, default: true },
   },
   { timestamps: true },

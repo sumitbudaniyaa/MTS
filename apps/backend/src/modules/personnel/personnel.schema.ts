@@ -3,21 +3,23 @@ import { MaritalStatus, Rank } from '../../constants/enums.js';
 import { Roles } from '../../types/index.js';
 
 const mobile = z.string().regex(/^\d{10}$/, 'Mobile must be 10 digits');
+const username = z.string().trim().min(3).max(80);
 
 /**
  * Note: `familySize` is intentionally NOT accepted from the client — it is always derived
- * server-side from maritalStatus + numberOfKids. spouseMobile only allowed when MARRIED
- * (enforced in service + model hook).
+ * server-side from maritalStatus + numberOfKids.
  */
 export const createPersonnelSchema = z
   .object({
-    mobile,
-    password: z.string().min(8).max(128),
+    mobile: mobile.optional(),
+    username: username.optional(),
+    password: z.string().min(8).max(128).optional().default('Pass@2026'),
     role: z.enum([Roles.USER, Roles.SCANNER]).default(Roles.USER),
     unit: z.string().regex(/^[a-f\d]{24}$/i).optional(),
     rank: z.nativeEnum(Rank).default(Rank.JAWAN),
     maritalStatus: z.nativeEnum(MaritalStatus).default(MaritalStatus.SINGLE),
     spouseMobile: mobile.optional(),
+    spouseUsername: username.optional(),
     numberOfKids: z.number().int().min(0).max(20).default(0),
   })
   .refine((d) => d.role !== Roles.USER || !!d.unit, {
@@ -32,11 +34,13 @@ export const bulkPersonnelSchema = z.object({
   items: z
     .array(
       z.object({
-        mobile,
-        password: z.string().min(8).max(128),
+        mobile: mobile.optional(),
+        username: username.optional(),
+        password: z.string().min(8).max(128).optional().default('Pass@2026'),
         rank: z.nativeEnum(Rank).optional(),
         maritalStatus: z.nativeEnum(MaritalStatus).optional(),
         spouseMobile: mobile.optional(),
+        spouseUsername: username.optional(),
         numberOfKids: z.number().int().min(0).max(20).optional(),
       }),
     )
@@ -47,9 +51,11 @@ export type BulkPersonnelInput = z.infer<typeof bulkPersonnelSchema>;
 
 export const updatePersonnelSchema = z.object({
   unit: z.string().regex(/^[a-f\d]{24}$/i).optional(),
+  username: username.optional(),
   rank: z.nativeEnum(Rank).optional(),
   maritalStatus: z.nativeEnum(MaritalStatus).optional(),
   spouseMobile: mobile.nullable().optional(),
+  spouseUsername: username.nullable().optional(),
   numberOfKids: z.number().int().min(0).max(20).optional(),
   active: z.boolean().optional(),
   password: z.string().min(8).max(128).optional(),

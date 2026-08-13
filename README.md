@@ -8,7 +8,7 @@ the full design and [todo.md](todo.md) for status.
 
 | Path           | What                                   | Status |
 |----------------|----------------------------------------|--------|
-| `apps/backend` | Node + Express + TS + Mongoose + socket.io | ✅ complete (57 tests) |
+| `apps/backend` | Node + Express + TS + Mongoose + socket.io | ✅ complete (59 tests) |
 | `apps/admin`   | React 19 Admin Portal (web, desktop, light/dark) | ✅ complete |
 | `apps/user`    | React 19 User app (web, mobile-first, live seat picker) | ✅ complete |
 | `apps/scanner` | React 19 Scanner app (web, mobile, QR camera) | ✅ complete |
@@ -17,11 +17,10 @@ the full design and [todo.md](todo.md) for status.
 > Atlas (or a local mongod)** — there is no Docker.
 
 ### Highlights
-- **Rank-based seat structure** — admin designs the auditorium (rows/seats, allowed ranks per
-  row); users pick seats on a **live seat map** (socket.io) with short **seat holds**.
-- Three separate account collections (`admins` / `scanners` / `users`); spouse logs in with
-  their own mobile + the member's password (shared family account).
-- Oversell-proof booking, refresh-token rotation, append-only audit, QR check-in.
+- **Rank-based seat structure & rank-aware unit quotas** — admin designs the auditorium (rows/seats, allowed ranks per row); users pick seats on a **live seat map** (socket.io) with short **seat holds**. Per-unit seat allocations support rank breakdown (`OFFICER`, `JCO`, `OR`, `ALL`) with an inline **"Distribute Equally Across Units"** action.
+- Three separate account collections (`admins` / `scanners` / `users`); flexible Unit Login Modes (`MOBILE` / `USERNAME`); spouse logs in with their own mobile/username + member password (shared family account).
+- Default personnel password (`Pass@2026`) when creating or bulk-importing members without an explicit password.
+- Oversell-proof booking, refresh-token rotation, append-only audit, QR check-in, zero dependency CVEs across all 4 apps.
 
 ## Data Model — Separate Account Collections
 

@@ -270,6 +270,71 @@ describe('auth', () => {
       close();
     }
   });
+
+  it('locks an account after 5 failed attempts and allows super admin unlock', async () => {
+    const { url, close } = await startApp();
+    try {
+      // 1 to 4 failed attempts -> 401 Unauthorized
+      for (let i = 0; i < 4; i++) {
+        const failRes = await fetch(`${url}/api/v1/auth/login`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ mobile: MOBILE, password: 'wrong-password' }),
+        });
+        expect(failRes.status).toBe(401);
+      }
+
+      // 5th failed attempt -> 403 Forbidden with lock message
+      const fifthRes = await fetch(`${url}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mobile: MOBILE, password: 'wrong-password' }),
+      });
+      expect(fifthRes.status).toBe(403);
+      const fifthBody = (await fifthRes.json()) as { error: { message: string } };
+      expect(fifthBody.error.message).toMatch(/locked after 5 failed attempts/i);
+
+      // 6th attempt even with correct password -> still 403 Forbidden
+      const lockedRes = await fetch(`${url}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mobile: MOBILE, password: PASSWORD }),
+      });
+      expect(lockedRes.status).toBe(403);
+
+      // Super Admin unlocks the personnel account
+      const userDoc = await UserModel.findOne({ mobileHash: undefined }); // find user
+      const allUsers = await UserModel.find({});
+      const targetUser = allUsers[0];
+
+      // Create a super admin to perform unlock
+      const { AdminModel } = await import('../src/models/index.js');
+      const { signAccessToken } = await import('../src/utils/jwt.js');
+      const superAdmin = await AdminModel.create({
+        mobile: '9998887770',
+        passwordHash: await hashPassword('SuperSecret123'),
+        role: Roles.SUPER_ADMIN,
+      });
+      const superToken = signAccessToken({ sub: superAdmin.id, role: Roles.SUPER_ADMIN });
+
+      // Super Admin unlocks user account
+      const unlockRes = await fetch(`${url}/api/v1/personnel/${targetUser.id}/unlock`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${superToken}` },
+      });
+      expect(unlockRes.status).toBe(200);
+
+      // Now login succeeds with correct password
+      const retryRes = await fetch(`${url}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mobile: MOBILE, password: PASSWORD }),
+      });
+      expect(retryRes.status).toBe(200);
+    } finally {
+      close();
+    }
+  });
 });
 
 describe('cross-site request forgery on session endpoints', () => {

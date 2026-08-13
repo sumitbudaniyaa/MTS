@@ -60,17 +60,17 @@ src/
 
 | Collection        | Purpose | Key fields |
 |-------------------|---------|------------|
-| `units`           | Army units (org label only; no seat quotas) | `name` 🔒(+`nameHash`), `active` |
-| `admins`          | Admin accounts (separate collection) | `mobile` 🔒(+`mobileHash`), `passwordHash`, `role` (SUPER_ADMIN\|ADMIN), `name`, `active` |
+| `units`           | Army units | `name` 🔒(+`nameHash`), `loginMode` (`MOBILE`\|`USERNAME`), `active` |
+| `admins`          | Admin accounts (separate collection) | `mobile` 🔒(+`mobileHash`), `passwordHash`, `role` (SUPER_ADMIN\|ADMIN), `name`, `failedLoginCount`, `lockedUntil`, `active` |
 | `scanners`        | Scanner/operator accounts (separate collection) | `mobile` 🔒(+`mobileHash`), `passwordHash`, `role` (fixed SCANNER), `active` |
-| `users`           | Personnel accounts only | `mobile` 🔒(+`mobileHash`), `passwordHash`, `role` (fixed USER), `unit`, `rank` (OFFICER\|JCO\|JAWAN), `maritalStatus`, `spouseMobile` 🔒(+`spouseMobileHash`), `numberOfKids`, `familySize` (derived) |
+| `users`           | Personnel accounts only | `mobile` 🔒(+`mobileHash`), `username`, `serviceNumber`, `passwordHash`, `role` (fixed USER), `unit`, `rank` (OFFICER\|JCO\|JAWAN), `maritalStatus`, `spouseMobile` 🔒(+`spouseMobileHash`), `spouseUsername`, `numberOfKids`, `familySize` (derived) |
 
 > 🔒 = **AES-256-GCM encrypted at rest** with a keyed HMAC blind index (`*Hash`) for lookup/uniqueness (§3.5.1).
 | `movies`          | Shows | `title`, `description`, `poster` (URL or base64), `showDate`, `startTime`, `durationMinutes` (endTime = start + duration), `totalSeats`, `status`, `openToAll` (JCO→Jawan rank extension + pool release flag) |
 | `settings`        | Admin-editable operational timings (singleton, fixed `_id`) | `visibilityLeadMinutes`, `noShowGraceMinutes`, `seatHoldSeconds`, `updatedBy` |
 | `auditoria`       | Physical venue layout (singleton) | `name`, `rows[]` → `{ label, seats[] → { number, allowedRanks[] } }` |
 | `movieseats`      | Per-movie seat inventory | `movie`, `row`, `number`, `label`, `allowedRanks[]`, `status` (FREE\|HELD\|BOOKED), `heldBy`, `holdExpiresAt`, `bookedBy`, `booking`, `ticketCode` |
-| `seatallocations` | Legacy per-unit quota (superseded by seats; endpoints retained) | `movie`, `unit`, `allocated`, `booked`, `released` |
+| `seatallocations` | Rank-aware per-unit quota | `movie`, `unit`, `rank` (OFFICER\|JCO\|OR\|ALL), `allocated`, `booked`, `released` |
 | `bookings`        | A booking = N tickets for one user/movie | `user`, `movie`, `quantity`, `source`, `idempotencyKey`, `tickets[]` |
 | `tickets`         | One seat = one QR (embedded in booking) | `code`, `seatLabel`, `status`, `checkedIn`, `checkedInAt`, `checkedInBy` + `checkedInByModel` (refPath→Scanner\|Admin) |
 | `auditlogs`       | Append-only audit trail | `user` (refPath→Admin/Scanner/User), `userModel`, `action`, `ip`, `metadata`, `createdAt` |
@@ -210,7 +210,16 @@ limiting, dependency CVEs. Clean on all but the items below, all now **fixed** e
   calls trip reuse-detection into a forced logout. The Origin must now be in `CORS_ORIGINS`.
   A **missing** Origin is allowed: non-browser callers send none, and the attack needs a browser
   to attach the cookie — browsers always set Origin on a cross-origin POST.
-- **Dependency CVEs cleared except two moderates.** Fixed: `jspdf` (critical) + `jspdf-autotable`
+- **Dependency CVEs: all clear.** `npm audit --omit=dev` reports **zero** for backend, admin,
+  user and scanner. Cleared: `jspdf` (critical) + `jspdf-autotable` + `dompurify` via 2.x→4.x;
+  **`xlsx`** (high, *no npm fix exists*) by pinning SheetJS's own CDN tarball, their documented
+  remediation; `nanoid`, `socket.io-parser`, `body-parser` in place; **`node-cron` 3→4** and
+  **`react-router` 6→7**, both majors that needed no source changes.
+  > `node-cron` 4 was nearly reverted on false evidence: a probe waited for a `POOL_RELEASED`
+  > status that no longer exists (the open-pool job was removed), so it looked like the
+  > scheduler had stopped firing. Re-probed against `openBookingWindow` — which still exists —
+  > it fires correctly. **Verify a scheduler upgrade against a job that is actually wired up.**
+- **Previously (superseded):** Fixed: `jspdf` (critical) + `jspdf-autotable`
   + `dompurify` via a 2.x→4.x upgrade; **`xlsx`** (high, *no npm fix exists*) by pinning SheetJS's
   own CDN tarball, which is their documented remediation; `nanoid`, `socket.io-parser`,
   `body-parser` in place. **Remaining, both moderate and both needing a major upgrade:**
@@ -521,14 +530,19 @@ config. See `apps/backend/.env.example`.
 
 ## 7. Current Status
 **All milestones + change requests + the seat epic are complete and verified** — backend
-**40/40 tests** (incl. throughput/contention benchmark, refresh-reuse detection, at-rest field
-encryption, seat-hold family cap), **tsc + eslint clean**; admin/user/scanner all build + lint clean.
+**59/59 tests** (incl. throughput/contention benchmark, refresh-reuse detection, at-rest field
+encryption, seat-hold family cap, rank-aware allocations, unit login modes, spouse credentials), **tsc + eslint clean**; admin/user/scanner all build + lint clean.
 
 Backend (auth, units, personnel, movies, seats/quota, **seating**, bookings, attendance,
 audit, reports, admins) + cron jobs + socket.io + security pipeline. Admin Portal, User app,
 Scanner app done. **Docker removed** — deploy via PM2 + Atlas (or a local replica-set mongod).
 
 Notable post-build changes folded in:
+- **Rank-aware unit seat allocations & equal distribution**: `SeatAllocationModel` tracks quotas per unit and per rank (`${unit}:${rank}` composite key), ensuring allocations align strictly with rank allowances, with an inline "Distribute Equally Across Units" option in the Admin allocation modal.
+- **Unit login modes (`MOBILE` / `USERNAME`)**: Units can specify their login authentication mode, supporting personnel logins via mobile or username/service number across User and Admin frontends.
+- **Default password for personnel (`Pass@2026`)**: Personnel created manually or via Excel/CSV bulk import default to `'Pass@2026'` when a password is omitted.
+- **Field encryption sparse index fix**: `fieldCrypto` sets unpopulated encrypted hashes to `undefined` rather than `null` so MongoDB sparse unique indexes disregard empty values (e.g. unpopulated spouse mobiles).
+- **Super admin seed reset & unlock**: `seedSuperAdmin.ts` updates existing super admin passwords, resets failed login counters, and unlocks accounts.
 - **Account collections split** (`admins`/`scanners`/`users`) with **per-collection mobile
   uniqueness** — the same mobile can be an admin, scanner **and** user; login is **role-scoped**
   (each app sends its `role`). Refresh tokens carry `role`; audit uses polymorphic `refPath`.

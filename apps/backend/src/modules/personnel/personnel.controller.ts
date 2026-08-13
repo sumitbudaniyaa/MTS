@@ -92,3 +92,15 @@ export const deletePersonnel = asyncHandler(async (req: Request, res: Response) 
   });
   res.json({ success: true });
 });
+
+export const unlockPersonnel = asyncHandler(async (req: Request, res: Response) => {
+  const existing = await svc.getPersonnel(req.params.id as string);
+  assertCanManage(req.principal?.role, existing.role as Role);
+  const user = await svc.unlockPersonnel(req.params.id as string);
+  await recordAudit({
+    action: AuditAction.PERSONNEL_UPDATE,
+    req,
+    metadata: { personnelId: user.id, targetRole: existing.role, unlocked: true },
+  });
+  res.json({ success: true, personnel: svc.toPersonnelView(user) });
+});

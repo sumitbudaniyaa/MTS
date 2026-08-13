@@ -37,6 +37,7 @@ describe('open-pool release (M6)', () => {
     await SeatAllocationModel.create({
       movie: movie._id,
       unit: unit._id,
+      rank: Rank.JAWAN,
       allocated: 5,
       booked: 2, // 3 unused -> should be released
     });
@@ -70,6 +71,7 @@ describe('open-pool release (M6)', () => {
     await SeatAllocationModel.create({
       movie: movie._id,
       unit: unit._id,
+      rank: Rank.JAWAN,
       allocated: 5,
       booked: 2,
     });
@@ -342,7 +344,7 @@ describe('allocation lock at showtime', () => {
       totalSeats: 10,
       status: MovieStatus.SCHEDULED,
     });
-    const allocations = { allocations: [{ unit: unit.id, allocated: 10 }] };
+    const allocations = { allocations: [{ unit: unit.id, rank: Rank.JAWAN, allocated: 10 }] };
 
     // Before showtime: allowed.
     expect(await setAllocations(movie.id, allocations)).toHaveLength(1);
@@ -481,7 +483,7 @@ describe('deleting a movie cleans up after itself', () => {
       status: MovieStatus.SCHEDULED,
     });
     await generateMovieSeats(movie.id);
-    await setAllocations(movie.id, { allocations: [{ unit: unit.id, allocated: 4 }] });
+    await setAllocations(movie.id, { allocations: [{ unit: unit.id, rank: Rank.JAWAN, allocated: 4 }] });
 
     expect(await MovieSeatModel.countDocuments({ movie: movie._id })).toBe(4);
     expect(await SeatAllocationModel.countDocuments({ movie: movie._id })).toBe(1);

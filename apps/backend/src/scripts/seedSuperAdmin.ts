@@ -38,10 +38,13 @@ async function seedSuperAdmin(): Promise<void> {
   // Uniqueness is enforced on the blind index of the (encrypted) mobile.
   const existing = await AdminModel.findOne({ mobileHash: blindIndex(mobile) });
   if (existing) {
-    logger.info(`[seed] admin ${mobile} already exists (role=${existing.role}) — skipping`);
+    existing.passwordHash = await hashPassword(password);
+    existing.role = Roles.SUPER_ADMIN;
+    existing.failedLoginCount = 0;
+    existing.lockedUntil = null;
+    await existing.save();
+    logger.info(`[seed] admin ${mobile} password updated and unlocked (role=${existing.role})`);
   } else {
-    // Passing plaintext `mobile` here is correct: the model's encryption hook seals it (AES-GCM
-    // ciphertext + blind index) on save.
     await AdminModel.create({
       mobile,
       passwordHash: await hashPassword(password),

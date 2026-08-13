@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { Plus, Trash2, Search } from 'lucide-react';
+import { Plus, Trash2, Search, LockKeyholeOpen } from 'lucide-react';
 import { api, apiErrorMessage } from '@/lib/api';
 import { mobileField } from '@/lib/mobile';
 import type { Paginated, Personnel } from '@/types';
-import { PageHeader, Card, LoadingState, EmptyState, ErrorState } from '@/components/ui/Misc';
+import { PageHeader, Card, Badge, LoadingState, EmptyState, ErrorState } from '@/components/ui/Misc';
 import { Button } from '@/components/ui/Button';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { Input } from '@/components/ui/Input';
@@ -37,6 +37,15 @@ export function ScannersPage() {
     onSuccess: () => {
       toast.success('Scanner removed');
       setDeleting(null);
+      qc.invalidateQueries({ queryKey: ['scanners'] });
+    },
+    onError: (e) => toast.error(apiErrorMessage(e)),
+  });
+
+  const unlock = useMutation({
+    mutationFn: (id: string) => api.post(`/personnel/${id}/unlock`),
+    onSuccess: () => {
+      toast.success('Account unlocked');
       qc.invalidateQueries({ queryKey: ['scanners'] });
     },
     onError: (e) => toast.error(apiErrorMessage(e)),
@@ -77,45 +86,87 @@ export function ScannersPage() {
         <>
           {/* Phone layout — the operational admin manages door staff from the venue. */}
           <div className="space-y-2.5 md:hidden">
-            {data.items.map((p) => (
-              <Card key={p.id} className="flex items-center justify-between gap-3 p-4">
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-fg">{p.mobile}</p>
-                  <p className="text-xs text-muted">{p.role}</p>
-                </div>
-                <Tooltip label="Remove">
-                  <Button size="sm" variant="ghost" onClick={() => setDeleting(p)}>
-                    <Trash2 className="h-4 w-4 text-danger" />
-                  </Button>
-                </Tooltip>
-              </Card>
-            ))}
+            {data.items.map((p) => {
+              const isLocked = p.lockedUntil && new Date(p.lockedUntil).getTime() > Date.now();
+              return (
+                <Card key={p.id} className="flex items-center justify-between gap-3 p-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate font-medium text-fg">{p.mobile}</p>
+                      {isLocked && <Badge tone="warning">Locked</Badge>}
+                    </div>
+                    <p className="text-xs text-muted">{p.role}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {isLocked && (
+                      <Tooltip label="Unlock Account">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => unlock.mutate(p.id)}
+                          disabled={unlock.isPending}
+                        >
+                          <LockKeyholeOpen className="h-4 w-4 text-warning" />
+                        </Button>
+                      </Tooltip>
+                    )}
+                    <Tooltip label="Remove">
+                      <Button size="sm" variant="ghost" onClick={() => setDeleting(p)}>
+                        <Trash2 className="h-4 w-4 text-danger" />
+                      </Button>
+                    </Tooltip>
+                  </div>
+                </Card>
+              );
+            })}
           </div>
 
           <div className="hidden md:block">
-          <Table
-            head={
-              <tr>
-                <Th>Mobile</Th>
-                <Th>Role</Th>
-                <Th className="text-right">Actions</Th>
-              </tr>
-            }
-          >
-            {data.items.map((p) => (
-              <tr key={p.id}>
-                <Td className="font-medium">{p.mobile}</Td>
-                <Td>{p.role}</Td>
-                <Td className="text-right">
-                  <Tooltip label="Remove">
-                    <Button size="sm" variant="ghost" onClick={() => setDeleting(p)}>
-                      <Trash2 className="h-4 w-4 text-danger" />
-                    </Button>
-                  </Tooltip>
-                </Td>
-              </tr>
-            ))}
-          </Table>
+            <Table
+              head={
+                <tr>
+                  <Th>Mobile</Th>
+                  <Th>Role</Th>
+                  <Th className="text-right">Actions</Th>
+                </tr>
+              }
+            >
+              {data.items.map((p) => {
+                const isLocked = p.lockedUntil && new Date(p.lockedUntil).getTime() > Date.now();
+                return (
+                  <tr key={p.id}>
+                    <Td className="font-medium">
+                      <div className="flex items-center gap-2">
+                        {p.mobile}
+                        {isLocked && <Badge tone="warning">Locked</Badge>}
+                      </div>
+                    </Td>
+                    <Td>{p.role}</Td>
+                    <Td className="text-right">
+                      <div className="flex justify-end gap-1">
+                        {isLocked && (
+                          <Tooltip label="Unlock Account">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => unlock.mutate(p.id)}
+                              disabled={unlock.isPending}
+                            >
+                              <LockKeyholeOpen className="h-4 w-4 text-warning" />
+                            </Button>
+                          </Tooltip>
+                        )}
+                        <Tooltip label="Remove">
+                          <Button size="sm" variant="ghost" onClick={() => setDeleting(p)}>
+                            <Trash2 className="h-4 w-4 text-danger" />
+                          </Button>
+                        </Tooltip>
+                      </div>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </Table>
           </div>
           <Pagination page={data.page} totalPages={data.totalPages} total={data.total} onPage={setPage} />
         </>

@@ -50,42 +50,46 @@ export async function setAllocations(
   }
 
   // Validate all units exist.
-  const unitIds = input.allocations.map((a) => a.unit);
+  const unitIds = Array.from(new Set(input.allocations.map((a) => a.unit)));
   const unitCount = await UnitModel.countDocuments({ _id: { $in: unitIds } });
   if (unitCount !== unitIds.length) throw ApiError.badRequest('One or more units do not exist');
 
   return runInTransaction(async (session) => {
     const existing = await SeatAllocationModel.find({ movie: movieId }).session(session ?? null);
-      const bookedByUnit = new Map(existing.map((e) => [String(e.unit), e.booked]));
+    const bookedByKey = new Map(existing.map((e) => [`${String(e.unit)}:${e.rank}`, e.booked]));
 
-      // Reducing below already-booked seats would corrupt the quota — reject.
-      for (const a of input.allocations) {
-        const alreadyBooked = bookedByUnit.get(a.unit) ?? 0;
-        if (a.allocated < alreadyBooked) {
-          throw ApiError.conflict(
-            `Unit ${a.unit}: cannot allocate ${a.allocated} seats; ${alreadyBooked} already booked`,
-          );
-        }
+    // Reducing below already-booked seats would corrupt the quota — reject.
+    for (const a of input.allocations) {
+      const key = `${a.unit}:${a.rank}`;
+      const alreadyBooked = bookedByKey.get(key) ?? 0;
+      if (a.allocated < alreadyBooked) {
+        throw ApiError.conflict(
+          `Unit ${a.unit} rank ${a.rank}: cannot allocate ${a.allocated} seats; ${alreadyBooked} already booked`,
+        );
       }
-      // A unit being removed entirely must have zero bookings.
-      const keep = new Set(unitIds);
-      for (const e of existing) {
-        if (!keep.has(String(e.unit)) && e.booked > 0) {
-          throw ApiError.conflict(`Cannot remove unit ${String(e.unit)} with existing bookings`);
-        }
-      }
+    }
 
-      await SeatAllocationModel.deleteMany({ movie: movieId }).session(session ?? null);
-      const docs = await SeatAllocationModel.create(
-        input.allocations.map((a) => ({
-          movie: movieId,
-          unit: a.unit,
-          allocated: a.allocated,
-          booked: bookedByUnit.get(a.unit) ?? 0,
-          released: 0,
-        })),
-        { session: session ?? null, ordered: true },
-      );
+    // A unit+rank allocation being removed entirely must have zero bookings.
+    const keepKeys = new Set(input.allocations.map((a) => `${a.unit}:${a.rank}`));
+    for (const e of existing) {
+      const key = `${String(e.unit)}:${e.rank}`;
+      if (!keepKeys.has(key) && e.booked > 0) {
+        throw ApiError.conflict(`Cannot remove unit ${String(e.unit)} rank ${e.rank} with existing bookings`);
+      }
+    }
+
+    await SeatAllocationModel.deleteMany({ movie: movieId }).session(session ?? null);
+    const docs = await SeatAllocationModel.create(
+      input.allocations.map((a) => ({
+        movie: movieId,
+        unit: a.unit,
+        rank: a.rank,
+        allocated: a.allocated,
+        booked: bookedByKey.get(`${a.unit}:${a.rank}`) ?? 0,
+        released: 0,
+      })),
+      { session: session ?? null, ordered: true },
+    );
 
       // Movie becomes SCHEDULED once fully allocated.
       if (movie.status === MovieStatus.DRAFT) {

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { ArrowLeft, Plus, Trash2, Search, Pencil, Upload, Download } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Search, Pencil, Upload, Download, LockKeyholeOpen } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { api, apiErrorMessage } from '@/lib/api';
 import { mobileField, onlyDigits10 } from '@/lib/mobile';
@@ -63,6 +63,15 @@ export function UnitDetailsPage() {
     onSuccess: () => {
       toast.success('Personnel removed');
       setDeleting(null);
+      qc.invalidateQueries({ queryKey: ['personnel', 'unit', id] });
+    },
+    onError: (e) => toast.error(apiErrorMessage(e)),
+  });
+
+  const unlock = useMutation({
+    mutationFn: (personnelId: string) => api.post(`/personnel/${personnelId}/unlock`),
+    onSuccess: () => {
+      toast.success('Account unlocked');
       qc.invalidateQueries({ queryKey: ['personnel', 'unit', id] });
     },
     onError: (e) => toast.error(apiErrorMessage(e)),
@@ -161,34 +170,54 @@ export function UnitDetailsPage() {
               </tr>
             }
           >
-            {personnel.items.map((p) => (
-              <tr key={p.id}>
-                <Td className="font-medium">{p.mobile}</Td>
-                <Td>{p.rank ? <Badge tone="accent">{p.rank}</Badge> : '—'}</Td>
-                <Td>{p.familySize ?? '—'}</Td>
-                <Td>
-                  {p.lastLoginAt ? new Date(p.lastLoginAt).toLocaleDateString() : 'Never'}
-                </Td>
-                <Td className="text-right">
-                  {canManagePeople ? (
-                    <div className="flex justify-end gap-1">
-                      <Tooltip label="Edit">
-                        <Button size="sm" variant="ghost" onClick={() => setEditing(p)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      </Tooltip>
-                      <Tooltip label="Remove">
-                        <Button size="sm" variant="ghost" onClick={() => setDeleting(p)}>
-                          <Trash2 className="h-4 w-4 text-danger" />
-                        </Button>
-                      </Tooltip>
+            {personnel.items.map((p) => {
+              const isLocked = p.lockedUntil && new Date(p.lockedUntil).getTime() > Date.now();
+              return (
+                <tr key={p.id}>
+                  <Td className="font-medium">
+                    <div className="flex items-center gap-2">
+                      {p.mobile}
+                      {isLocked && <Badge tone="warning">Locked</Badge>}
                     </div>
-                  ) : (
-                    <span className="text-muted">—</span>
-                  )}
-                </Td>
-              </tr>
-            ))}
+                  </Td>
+                  <Td>{p.rank ? <Badge tone="accent">{p.rank}</Badge> : '—'}</Td>
+                  <Td>{p.familySize ?? '—'}</Td>
+                  <Td>
+                    {p.lastLoginAt ? new Date(p.lastLoginAt).toLocaleDateString() : 'Never'}
+                  </Td>
+                  <Td className="text-right">
+                    {canManagePeople ? (
+                      <div className="flex justify-end gap-1">
+                        {isLocked && (
+                          <Tooltip label="Unlock Account">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => unlock.mutate(p.id)}
+                              disabled={unlock.isPending}
+                            >
+                              <LockKeyholeOpen className="h-4 w-4 text-warning" />
+                            </Button>
+                          </Tooltip>
+                        )}
+                        <Tooltip label="Edit">
+                          <Button size="sm" variant="ghost" onClick={() => setEditing(p)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </Tooltip>
+                        <Tooltip label="Remove">
+                          <Button size="sm" variant="ghost" onClick={() => setDeleting(p)}>
+                            <Trash2 className="h-4 w-4 text-danger" />
+                          </Button>
+                        </Tooltip>
+                      </div>
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                  </Td>
+                </tr>
+              );
+            })}
           </Table>
           <Pagination
             page={personnel.page}
@@ -201,7 +230,7 @@ export function UnitDetailsPage() {
 
       {creating && (
         <PersonnelFormModal
-          unitId={unit.id}
+          unit={unit}
           onClose={() => setCreating(false)}
           onSaved={() => {
             setCreating(false);
@@ -213,6 +242,7 @@ export function UnitDetailsPage() {
       {editing && (
         <EditPersonnelModal
           person={editing}
+          isUsernameMode={unit.loginMode === 'USERNAME'}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -244,20 +274,21 @@ export function UnitDetailsPage() {
 }
 
 interface PersonnelForm {
-  mobile: string;
-  password: string;
+  mobile?: string;
+  username?: string;
   rank: 'OFFICER' | 'JCO' | 'JAWAN';
   maritalStatus: 'SINGLE' | 'MARRIED';
   spouseMobile?: string;
+  spouseUsername?: string;
   numberOfKids: number;
 }
 
 function PersonnelFormModal({
-  unitId,
+  unit,
   onClose,
   onSaved,
 }: {
-  unitId: string;
+  unit: Unit;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -270,25 +301,34 @@ function PersonnelFormModal({
     defaultValues: { rank: 'JAWAN', maritalStatus: 'SINGLE', numberOfKids: 0 },
   });
   const married = watch('maritalStatus') === 'MARRIED';
+  const isUsernameMode = unit.loginMode === 'USERNAME';
 
   const save = useMutation({
     mutationFn: (v: PersonnelForm) => {
       const payload: Record<string, unknown> = {
-        mobile: v.mobile,
-        password: v.password,
         role: 'USER',
-        unit: unitId,
+        unit: unit.id,
         rank: v.rank,
         maritalStatus: v.maritalStatus,
         numberOfKids: Number(v.numberOfKids) || 0,
       };
-      if (v.maritalStatus === 'MARRIED' && v.spouseMobile) {
-        payload.spouseMobile = v.spouseMobile;
+      if (isUsernameMode) {
+        payload.username = v.username;
+        if (v.mobile) payload.mobile = v.mobile;
+      } else {
+        payload.mobile = v.mobile;
+      }
+      if (v.maritalStatus === 'MARRIED') {
+        if (isUsernameMode && v.spouseUsername) {
+          payload.spouseUsername = v.spouseUsername;
+        } else if (v.spouseMobile) {
+          payload.spouseMobile = v.spouseMobile;
+        }
       }
       return api.post('/personnel', payload);
     },
     onSuccess: () => {
-      toast.success('Personnel added');
+      toast.success('Personnel added (Default Password: Pass@2026)');
       onSaved();
     },
     onError: (e) => toast.error(apiErrorMessage(e)),
@@ -312,18 +352,22 @@ function PersonnelFormModal({
       }
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Input
-          label="Mobile"
-          error={errors.mobile?.message}
-          disabled={save.isPending}
-          {...mobileField(register('mobile', { required: 'Required', pattern: { value: /^\d{10}$/, message: '10 digits' } }))}
-        />
-        <PasswordInput
-          label="Password"
-          error={errors.password?.message}
-          disabled={save.isPending}
-          {...register('password', { required: 'Required', minLength: { value: 8, message: 'Min 8' } })}
-        />
+        {isUsernameMode ? (
+          <Input
+            label="Username"
+            placeholder="e.g. johndoe123"
+            error={errors.username?.message}
+            disabled={save.isPending}
+            {...register('username', { required: 'Username is required' })}
+          />
+        ) : (
+          <Input
+            label="Mobile"
+            error={errors.mobile?.message}
+            disabled={save.isPending}
+            {...mobileField(register('mobile', { required: 'Required', pattern: { value: /^\d{10}$/, message: '10 digits' } }))}
+          />
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -340,17 +384,24 @@ function PersonnelFormModal({
       </div>
 
       {married && (
-        <Input
-          label="Spouse mobile (spouse logs in with the same password)"
-          disabled={save.isPending}
-          {...mobileField(register('spouseMobile'))}
-        />
+        isUsernameMode ? (
+          <Input
+            label="Spouse username"
+            placeholder="e.g. spouse123"
+            disabled={save.isPending}
+            {...register('spouseUsername')}
+          />
+        ) : (
+          <Input
+            label="Spouse mobile"
+            disabled={save.isPending}
+            {...mobileField(register('spouseMobile'))}
+          />
+        )
       )}
 
       <p className="text-xs text-muted">
-        Family size is computed automatically by the server (1 + spouse + kids). If a spouse
-        password is set, the spouse can log in with their own mobile and shares this family's
-        tickets and quota.
+        Default Password: <span className="font-semibold text-fg">Pass@2026</span>. Family size is computed automatically (1 + spouse + kids).
       </p>
     </Modal>
   );
@@ -358,10 +409,12 @@ function PersonnelFormModal({
 
 function EditPersonnelModal({
   person,
+  isUsernameMode,
   onClose,
   onSaved,
 }: {
   person: Personnel;
+  isUsernameMode?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -370,6 +423,7 @@ function EditPersonnelModal({
     person.maritalStatus ?? 'SINGLE',
   );
   const [spouseMobile, setSpouseMobile] = useState(person.spouseMobile ?? '');
+  const [spouseUsername, setSpouseUsername] = useState(person.spouseUsername ?? '');
   const [numberOfKids, setNumberOfKids] = useState(person.numberOfKids ?? 0);
   const [active, setActive] = useState(person.active);
   const [password, setPassword] = useState('');
@@ -382,6 +436,7 @@ function EditPersonnelModal({
         numberOfKids: Number(numberOfKids) || 0,
         active,
         spouseMobile: maritalStatus === 'MARRIED' ? spouseMobile || null : null,
+        spouseUsername: maritalStatus === 'MARRIED' ? spouseUsername || null : null,
       };
       if (password) payload.password = password;
       return api.patch(`/personnel/${person.id}`, payload);
@@ -398,7 +453,7 @@ function EditPersonnelModal({
       open
       onClose={onClose}
       loading={save.isPending}
-      title={`Edit ${person.mobile}`}
+      title={`Edit ${person.username || person.mobile}`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
@@ -429,14 +484,23 @@ function EditPersonnelModal({
       </div>
 
       {maritalStatus === 'MARRIED' && (
-        <Input
-          label="Spouse mobile (logs in with the same password)"
-          inputMode="numeric"
-          maxLength={10}
-          value={spouseMobile}
-          disabled={save.isPending}
-          onChange={(e) => setSpouseMobile(onlyDigits10(e.target.value))}
-        />
+        isUsernameMode ? (
+          <Input
+            label="Spouse username (logs in with the same password)"
+            value={spouseUsername}
+            disabled={save.isPending}
+            onChange={(e) => setSpouseUsername(e.target.value.trim())}
+          />
+        ) : (
+          <Input
+            label="Spouse mobile (logs in with the same password)"
+            inputMode="numeric"
+            maxLength={10}
+            value={spouseMobile}
+            disabled={save.isPending}
+            onChange={(e) => setSpouseMobile(onlyDigits10(e.target.value))}
+          />
+        )
       )}
 
       <Select label="Status" value={active ? 'active' : 'inactive'} disabled={save.isPending} onChange={(e) => setActive(e.target.value === 'active')}>
@@ -457,11 +521,13 @@ function EditPersonnelModal({
 
 type ValidRank = 'OFFICER' | 'JCO' | 'JAWAN';
 interface BulkItem {
-  mobile: string;
-  password: string;
+  mobile?: string;
+  username?: string;
+  password?: string;
   rank?: ValidRank;
   maritalStatus?: 'SINGLE' | 'MARRIED';
   spouseMobile?: string;
+  spouseUsername?: string;
   numberOfKids?: number;
 }
 
@@ -477,9 +543,10 @@ function parseRows(rows: Record<string, unknown>[]): { items: BulkItem[]; skippe
     const r: Record<string, unknown> = {};
     for (const k of Object.keys(raw)) r[normKey(k)] = raw[k];
     const mobile = String(r.mobile ?? '').trim();
-    const password = String(r.password ?? '').trim();
-    if (!/^\d{10}$/.test(mobile) || password.length < 8) {
-      skipped.push(`Row ${i + 2}: ${mobile || '(no mobile)'} — needs a 10-digit mobile and 8+ char password`);
+    const username = String(r.username ?? r.user ?? '').trim();
+    const password = String(r.password ?? '').trim() || 'Pass@2026';
+    if (!mobile && !username) {
+      skipped.push(`Row ${i + 2}: Needs a 10-digit mobile number or username`);
       return;
     }
     const rankRaw = String(r.rank ?? '').toUpperCase();
@@ -488,20 +555,30 @@ function parseRows(rows: Record<string, unknown>[]): { items: BulkItem[]; skippe
       : undefined;
     const maritalRaw = String(r.maritalstatus ?? r.marital ?? '').toUpperCase();
     const maritalStatus = maritalRaw === 'MARRIED' ? 'MARRIED' : maritalRaw === 'SINGLE' ? 'SINGLE' : undefined;
-    const spouseRaw = String(r.spousemobile ?? r.spouse ?? '').trim();
-    const spouseMobile = /^\d{10}$/.test(spouseRaw) ? spouseRaw : undefined;
+    const spouseMobileRaw = String(r.spousemobile ?? r.spouse ?? '').trim();
+    const spouseMobile = /^\d{10}$/.test(spouseMobileRaw) ? spouseMobileRaw : undefined;
+    const spouseUsername = String(r.spouseusername ?? r.spouseuser ?? '').trim() || undefined;
     const kidsRaw = Number(r.numberofkids ?? r.kids ?? 0);
     const numberOfKids = Number.isFinite(kidsRaw) ? Math.max(0, Math.floor(kidsRaw)) : 0;
-    items.push({ mobile, password, rank, maritalStatus, spouseMobile, numberOfKids });
+    items.push({
+      ...(mobile ? { mobile } : {}),
+      ...(username ? { username } : {}),
+      password,
+      rank,
+      maritalStatus,
+      spouseMobile,
+      spouseUsername,
+      numberOfKids,
+    });
   });
   return { items, skipped };
 }
 
 function downloadTemplate() {
   const ws = XLSX.utils.aoa_to_sheet([
-    ['mobile', 'password', 'rank', 'maritalStatus', 'spouseMobile', 'numberOfKids'],
-    ['9876543210', 'Pass1234', 'JAWAN', 'SINGLE', '', 0],
-    ['9876543211', 'Pass1234', 'OFFICER', 'MARRIED', '9876543212', 2],
+    ['mobile', 'username', 'rank', 'maritalStatus', 'spouseMobile', 'spouseUsername', 'numberOfKids'],
+    ['9876543210', '', 'JAWAN', 'SINGLE', '', '', 0],
+    ['', 'officer123', 'OFFICER', 'MARRIED', '', 'spouse123', 2],
   ]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'personnel');

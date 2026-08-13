@@ -106,8 +106,8 @@ describe('domain (M4)', () => {
     // Sum = 40 != 50 -> 400.
     const bad = await api('PUT', `/api/v1/seat-allocations/${movieId}`, {
       allocations: [
-        { unit: sig.unit.id, allocated: 25 },
-        { unit: asc.unit.id, allocated: 15 },
+        { unit: sig.unit.id, rank: 'JAWAN', allocated: 25 },
+        { unit: asc.unit.id, rank: 'JAWAN', allocated: 15 },
       ],
     });
     expect(bad.status).toBe(400);
@@ -115,8 +115,8 @@ describe('domain (M4)', () => {
     // Sum = 50 == 50 -> ok.
     const ok = await api('PUT', `/api/v1/seat-allocations/${movieId}`, {
       allocations: [
-        { unit: sig.unit.id, allocated: 30 },
-        { unit: asc.unit.id, allocated: 20 },
+        { unit: sig.unit.id, rank: 'JAWAN', allocated: 30 },
+        { unit: asc.unit.id, rank: 'JAWAN', allocated: 20 },
       ],
     });
     expect(ok.status).toBe(200);

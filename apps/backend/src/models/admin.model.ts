@@ -22,6 +22,8 @@ const adminSchema = new Schema(
     name: { type: String, trim: true, default: '' },
     active: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },
+    failedLoginCount: { type: Number, default: 0 },
+    lockedUntil: { type: Date, default: null },
   },
   { timestamps: true },
 );

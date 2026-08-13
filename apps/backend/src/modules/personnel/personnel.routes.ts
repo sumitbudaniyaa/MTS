@@ -28,3 +28,4 @@ personnelRouter.patch(
   ctrl.updatePersonnel,
 );
 personnelRouter.delete('/:id', validate({ params: idParamSchema }), ctrl.deletePersonnel);
+personnelRouter.post('/:id/unlock', validate({ params: idParamSchema }), ctrl.unlockPersonnel);

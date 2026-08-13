@@ -662,3 +662,17 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
       min/max validation and the dirty check, and saves once. On success it seeds the `['settings']`
       cache, so the Movies page — which reads the same key for its edit-lock window — picks the new
       lead up without a refetch.
+- [x] **Both remaining CVEs fixed — `npm audit --omit=dev` is now zero across all four apps.**
+      `node-cron` 3→4 and `react-router` 6→7, both major upgrades that needed no source changes
+      (typecheck and builds clean on all three frontends; 57/57 backend tests).
+      Worth recording the near-miss: node-cron 4 was almost reverted because a probe waited for a
+      movie to reach `POOL_RELEASED` and it never did — which looked exactly like the scheduler
+      having stopped firing. The real reason was that **`openPool.job.ts` has been removed**, so
+      nothing sets that status any more. Re-probed against `openBookingWindow` (still wired up),
+      the cron fires fine. Lesson: verify a scheduler upgrade against a job that actually exists.
+- [x] **Rank-aware per-unit seat allocation & equal distribution added.** `SeatAllocationModel` now tracks quotas by unit and rank (`${unit}:${rank}` composite key), ensuring unit quotas can be partitioned by officer/JCO/Jawan rank tiers. `AllocateSeatsModal.tsx` in Admin app updated with an "Distribute Equally Across Units" option, and backend quota guards validate reductions against existing bookings per unit+rank.
+- [x] **Flexible Unit Login Modes (`MOBILE` / `USERNAME`).** Added `loginMode` to `UnitModel` and schema, allowing units to toggle between mobile-based authentication and username/service-number authentication. Admin Units / Unit Details pages and User app `LoginDrawer` updated to support both modes seamlessly.
+- [x] **Default password for personnel (`Pass@2026`).** Created or bulk-imported personnel default to `'Pass@2026'` when no explicit password is provided in schema / service.
+- [x] **Field encryption sparse index fix.** Updated `fieldCrypto.ts` to set empty hash fields to `undefined` rather than `null` on Mongo documents, ensuring MongoDB sparse unique indexes disregard empty/unset values (e.g., unpopulated spouse mobiles) without causing duplicate key errors.
+- [x] **Super Admin seed reset & unlock.** Enhanced `seedSuperAdmin.ts` so running the seed script on an existing Super Admin account updates the password hash, resets `failedLoginCount` to 0, and clears `lockedUntil`.
+- [x] **Backend test suite expanded — 59/59 tests green.** Includes tests for rank-aware allocation keying, username-mode spouse logins, account lockout/unlock, domain, load tests, seating, auth, jobs, settings, and encryption.

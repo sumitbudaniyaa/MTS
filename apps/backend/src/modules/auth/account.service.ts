@@ -15,8 +15,12 @@ export interface Account {
   role: Role;
   unit: string | null; // personnel (USER) only
   active: boolean;
+  failedLoginCount: number;
+  lockedUntil: Date | null;
   passwordHash?: string; // present only when explicitly selected
   touchLogin: () => Promise<void>;
+  recordFailedLogin: () => Promise<{ failedCount: number; lockedUntil: Date | null }>;
+  resetLockout: () => Promise<void>;
 }
 
 /** Mongoose model name backing a role (used for audit refPath). */
@@ -40,64 +44,67 @@ interface AccountDocLike {
   passwordHash?: string;
   unit?: unknown;
   lastLoginAt?: Date | null;
+  failedLoginCount?: number;
+  lockedUntil?: Date | null;
   save: () => Promise<unknown>;
 }
 
-function toAccount(doc: AccountDocLike, role: Role): Account {
+function toAccount(doc: AccountDocLike, role: Role, overrideMobile?: string): Account {
   return {
     id: doc.id ?? String(doc._id),
-    mobile: doc.mobile,
+    mobile: overrideMobile ?? doc.mobile,
     name: doc.name ?? '',
     role,
     unit: role === Roles.USER && doc.unit ? String(doc.unit) : null,
     active: doc.active,
+    failedLoginCount: doc.failedLoginCount ?? 0,
+    lockedUntil: doc.lockedUntil ?? null,
     passwordHash: doc.passwordHash,
     touchLogin: async () => {
       doc.lastLoginAt = new Date();
+      doc.failedLoginCount = 0;
+      doc.lockedUntil = null;
+      await doc.save();
+    },
+    recordFailedLogin: async () => {
+      const nextCount = (doc.failedLoginCount ?? 0) + 1;
+      doc.failedLoginCount = nextCount;
+      if (nextCount >= 5) {
+        doc.lockedUntil = new Date(Date.now() + 15 * 60_000);
+      }
+      await doc.save();
+      return { failedCount: nextCount, lockedUntil: doc.lockedUntil ?? null };
+    },
+    resetLockout: async () => {
+      doc.failedLoginCount = 0;
+      doc.lockedUntil = null;
       await doc.save();
     },
   };
 }
 
-/**
- * Resolve a USER account by mobile (own `mobile` OR a personnel `spouseMobile`). When matched
- * as the spouse, the spouse credential is used and the spouse's mobile is shown, but the
- * account id (and thus the family quota / bookings) is the SAME shared record.
- */
-async function findUserByMobile(mobile: string): Promise<Account | null> {
-  const h = blindIndex(mobile);
+async function findUserByIdentifier(identifier: string): Promise<Account | null> {
+  const h = blindIndex(identifier);
   const user = await UserModel.findOne({
-    $or: [{ mobileHash: h }, { spouseMobileHash: h }],
+    $or: [
+      { mobileHash: h },
+      { spouseMobileHash: h },
+      { usernameHash: h },
+      { spouseUsernameHash: h },
+    ],
   }).select('+passwordHash');
   if (!user) return null;
-  return {
-    id: user.id,
-    mobile, // the identity actually used to log in
-    name: '',
-    role: Roles.USER,
-    unit: user.unit ? String(user.unit) : null,
-    active: user.active,
-    passwordHash: user.passwordHash,
-    touchLogin: async () => {
-      user.lastLoginAt = new Date();
-      await user.save();
-    },
-  };
+  return toAccount(user, Roles.USER, identifier);
 }
 
 /**
- * Find an account by mobile (with password hash). Because the same mobile can now exist
- * independently as an admin, a scanner AND a user, callers pass the `role` of the app the
- * person is logging into so the correct collection is used. When `role` is omitted, all
- * collections are searched (admin > scanner > user) for backwards compatibility.
+ * Find an account by mobile or username (with password hash). Caller may pass role hint.
  */
 export async function findAccountByMobile(
-  mobile: string,
+  identifier: string,
   role?: Role,
 ): Promise<Account | null> {
-  // The admin app's login sends role=ADMIN as an "audience": it maps to the admins collection,
-  // and the account's ACTUAL tier (SUPER_ADMIN or ADMIN) comes from the stored doc.
-  const h = blindIndex(mobile);
+  const h = blindIndex(identifier);
   if (role && isAdminRole(role)) {
     const admin = await AdminModel.findOne({ mobileHash: h }).select('+passwordHash');
     return admin ? toAccount(admin, admin.role as Role) : null;
@@ -107,7 +114,7 @@ export async function findAccountByMobile(
     return scanner ? toAccount(scanner, Roles.SCANNER) : null;
   }
   if (role === Roles.USER) {
-    return findUserByMobile(mobile);
+    return findUserByIdentifier(identifier);
   }
 
   // No role hint — search everything (admin wins, then scanner, then user).
@@ -117,7 +124,7 @@ export async function findAccountByMobile(
   ]);
   if (admin) return toAccount(admin, admin.role as Role);
   if (scanner) return toAccount(scanner, Roles.SCANNER);
-  return findUserByMobile(mobile);
+  return findUserByIdentifier(identifier);
 }
 
 /** Find an account by id within the collection implied by its role. */
@@ -175,4 +182,31 @@ export async function mobileTaken(
     ? { $or: [{ mobileHash: h }, { spouseMobileHash: h }], _id: { $ne: exceptUserId } }
     : { $or: [{ mobileHash: h }, { spouseMobileHash: h }] };
   return Boolean(await UserModel.exists(userFilter));
+}
+
+/** Whether a username is already taken in the users collection (as member or spouse username). */
+export async function usernameTaken(
+  username: string,
+  exceptUserId?: string,
+): Promise<boolean> {
+  const h = blindIndex(username);
+  const userFilter = exceptUserId
+    ? { $or: [{ usernameHash: h }, { spouseUsernameHash: h }], _id: { $ne: exceptUserId } }
+    : { $or: [{ usernameHash: h }, { spouseUsernameHash: h }] };
+  return Boolean(await UserModel.exists(userFilter));
+}
+
+/** Explicitly unlock an account by clearing failed login attempts and lockedUntil timestamp. */
+export async function unlockAccount(id: string, role: Role): Promise<boolean> {
+  const update = { $set: { failedLoginCount: 0, lockedUntil: null } };
+  if (isAdminRole(role)) {
+    const res = await AdminModel.updateOne({ _id: id }, update);
+    return res.matchedCount > 0;
+  }
+  if (role === Roles.SCANNER) {
+    const res = await ScannerModel.updateOne({ _id: id }, update);
+    return res.matchedCount > 0;
+  }
+  const res = await UserModel.updateOne({ _id: id }, update);
+  return res.matchedCount > 0;
 }

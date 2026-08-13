@@ -5,27 +5,26 @@ import { Button } from '@/components/ui/Button';
 import { PasswordField } from '@/components/ui/PasswordField';
 import { login } from './useAuth';
 import { apiErrorMessage } from '@/lib/api';
-import { onlyDigits10 } from '@/lib/mobile';
 import { useUiStore } from '@/stores/ui.store';
 
 /** Bottom-drawer login — opened on demand (booking, viewing tickets, account button). */
 export function LoginDrawer() {
   const { loginOpen, closeLogin } = useUiStore();
-  const [mobile, setMobile] = useState('');
+  const [identity, setIdentity] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!/^\d{10}$/.test(mobile)) {
-      toast.error('Enter a valid 10-digit mobile');
+    if (!identity.trim()) {
+      toast.error('Enter a valid mobile number or username');
       return;
     }
     setBusy(true);
     try {
-      await login(mobile, password);
+      await login(identity.trim(), password);
       toast.success('Signed in');
-      setMobile('');
+      setIdentity('');
       setPassword('');
       closeLogin();
     } catch (err) {
@@ -40,18 +39,16 @@ export function LoginDrawer() {
       <form onSubmit={submit} className="space-y-3">
         <div>
           <label className="label" htmlFor="d-mobile">
-            Mobile number
+            Mobile number or Username
           </label>
           <input
             id="d-mobile"
             className="input"
-            inputMode="numeric"
-            maxLength={10}
             autoComplete="username"
-            placeholder="10-digit mobile"
-            value={mobile}
+            placeholder="Mobile or Username"
+            value={identity}
             disabled={busy}
-            onChange={(e) => setMobile(onlyDigits10(e.target.value))}
+            onChange={(e) => setIdentity(e.target.value)}
           />
         </div>
         <PasswordField
