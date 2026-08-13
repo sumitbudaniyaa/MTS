@@ -49,7 +49,7 @@ export async function createPersonnel(input: CreatePersonnelInput): Promise<Mana
 
   const isUsernameMode = unitDoc.loginMode === 'USERNAME';
   let mobile = input.mobile;
-  let username = input.username?.trim();
+  const username = input.username?.trim();
 
   if (isUsernameMode) {
     if (!username) throw ApiError.badRequest('Username is required for personnel in this unit');

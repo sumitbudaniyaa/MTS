@@ -8,7 +8,7 @@ the full design and [todo.md](todo.md) for status.
 
 | Path           | What                                   | Status |
 |----------------|----------------------------------------|--------|
-| `apps/backend` | Node + Express + TS + Mongoose + socket.io | ✅ complete (59 tests) |
+| `apps/backend` | Node + Express + TS + Mongoose + socket.io | ✅ complete (61 tests) |
 | `apps/admin`   | React 19 Admin Portal (web, desktop, light/dark) | ✅ complete |
 | `apps/user`    | React 19 User app (web, mobile-first, live seat picker) | ✅ complete |
 | `apps/scanner` | React 19 Scanner app (web, mobile, QR camera) | ✅ complete |

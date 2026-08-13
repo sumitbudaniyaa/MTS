@@ -347,7 +347,16 @@ export async function getMovieAdminDetail(movieId: string) {
     }
   }
 
-  const allocationList = allocDocs.map((a) => {
+  const allocationList: Array<{
+    unit: string;
+    rank: string | null;
+    allocated: number;
+    booked: number;
+    quotaUsed: number;
+    released: number;
+    remaining: number;
+    overQuota: number;
+  }> = allocDocs.map((a) => {
     const unitDoc = a.unit as unknown as { _id?: unknown; name?: string } | null;
     const unitId = String(unitDoc?._id ?? a.unit);
     const key = a.rank ? `${unitId}:${a.rank}` : unitId;

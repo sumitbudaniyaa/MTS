@@ -530,7 +530,7 @@ config. See `apps/backend/.env.example`.
 
 ## 7. Current Status
 **All milestones + change requests + the seat epic are complete and verified** — backend
-**59/59 tests** (incl. throughput/contention benchmark, refresh-reuse detection, at-rest field
+**61/61 tests** (incl. throughput/contention benchmark, refresh-reuse detection, at-rest field
 encryption, seat-hold family cap, rank-aware allocations, unit login modes, spouse credentials), **tsc + eslint clean**; admin/user/scanner all build + lint clean.
 
 Backend (auth, units, personnel, movies, seats/quota, **seating**, bookings, attendance,
@@ -538,6 +538,8 @@ audit, reports, admins) + cron jobs + socket.io + security pipeline. Admin Porta
 Scanner app done. **Docker removed** — deploy via PM2 + Atlas (or a local replica-set mongod).
 
 Notable post-build changes folded in:
+- **Render production deployment TypeScript fix (`seating.service.ts`)**: Resolved TS2322 strict typing error during build by explicitly annotating `allocationList` array item types to support `rank: string | null`.
+- **ESLint quality cleanup (`personnel.service.ts`)**: Replaced `let` with `const` on `username` to enforce `prefer-const` across the entire codebase (zero ESLint errors across all 4 apps).
 - **Rank-aware unit seat allocations & equal distribution**: `SeatAllocationModel` tracks quotas per unit and per rank (`${unit}:${rank}` composite key), ensuring allocations align strictly with rank allowances, with an inline "Distribute Equally Across Units" option in the Admin allocation modal.
 - **Unit login modes (`MOBILE` / `USERNAME`)**: Units can specify their login authentication mode, supporting personnel logins via mobile or username/service number across User and Admin frontends.
 - **Default password for personnel (`Pass@2026`)**: Personnel created manually or via Excel/CSV bulk import default to `'Pass@2026'` when a password is omitted.
