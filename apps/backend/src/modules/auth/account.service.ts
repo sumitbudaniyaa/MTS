@@ -17,11 +17,21 @@ export interface Account {
   active: boolean;
   failedLoginCount: number;
   lockedUntil: Date | null;
+  /** True while the account still carries a password someone else chose. */
+  mustChangePassword: boolean;
+  /** When that borrowed password stops being accepted. Null once self-chosen. */
+  passwordExpiresAt: Date | null;
   passwordHash?: string; // present only when explicitly selected
   touchLogin: () => Promise<void>;
   recordFailedLogin: () => Promise<{ failedCount: number; lockedUntil: Date | null }>;
   resetLockout: () => Promise<void>;
 }
+
+/**
+ * How long an account may keep a password someone else set for it. The account works normally
+ * inside this window — the apps nudge, they are not locked out — and stops working after it.
+ */
+export const PASSWORD_GRACE_DAYS = 30;
 
 /** Mongoose model name backing a role (used for audit refPath). */
 export function modelNameForRole(role: Role): 'Admin' | 'Scanner' | 'User' {
@@ -46,6 +56,8 @@ interface AccountDocLike {
   lastLoginAt?: Date | null;
   failedLoginCount?: number;
   lockedUntil?: Date | null;
+  mustChangePassword?: boolean;
+  passwordExpiresAt?: Date | null;
   save: () => Promise<unknown>;
 }
 
@@ -59,6 +71,8 @@ function toAccount(doc: AccountDocLike, role: Role, overrideMobile?: string): Ac
     active: doc.active,
     failedLoginCount: doc.failedLoginCount ?? 0,
     lockedUntil: doc.lockedUntil ?? null,
+    mustChangePassword: doc.mustChangePassword ?? false,
+    passwordExpiresAt: doc.passwordExpiresAt ?? null,
     passwordHash: doc.passwordHash,
     touchLogin: async () => {
       doc.lastLoginAt = new Date();
@@ -157,8 +171,22 @@ export async function setPasswordById(
   id: string,
   role: Role,
   passwordHash: string,
+  /**
+   * Whether the owner must still change this password. `false` for a self-service change (they
+   * just chose it); `true` when an admin sets or resets someone else's, since a password chosen
+   * by another person is not a secret the owner controls.
+   */
+  mustChangePassword = false,
 ): Promise<void> {
-  const update = { $set: { passwordHash } };
+  const update = {
+    $set: {
+      passwordHash,
+      mustChangePassword,
+      passwordExpiresAt: mustChangePassword
+        ? new Date(Date.now() + PASSWORD_GRACE_DAYS * 24 * 60 * 60_000)
+        : null,
+    },
+  };
   if (isAdminRole(role)) await AdminModel.updateOne({ _id: id }, update);
   else if (role === Roles.SCANNER) await ScannerModel.updateOne({ _id: id }, update);
   else await UserModel.updateOne({ _id: id }, update);

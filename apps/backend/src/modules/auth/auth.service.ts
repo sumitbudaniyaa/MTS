@@ -33,6 +33,10 @@ export interface PublicUser {
   name: string;
   role: Role;
   unit: string | null;
+  /** Clients use this to nudge, and to force the change once the deadline passes. */
+  mustChangePassword: boolean;
+  /** ISO deadline for changing it, or null when the owner chose it themselves. */
+  passwordExpiresAt: string | null;
 }
 
 function toPublicUser(account: Account): PublicUser {
@@ -42,6 +46,8 @@ function toPublicUser(account: Account): PublicUser {
     name: account.name,
     role: account.role,
     unit: account.unit,
+    mustChangePassword: account.mustChangePassword,
+    passwordExpiresAt: account.passwordExpiresAt ? account.passwordExpiresAt.toISOString() : null,
   };
 }
 
@@ -50,6 +56,8 @@ function principalOf(account: Account): AuthPrincipal {
     sub: account.id,
     role: account.role,
     unit: account.unit ?? undefined,
+    mustChangePassword: account.mustChangePassword,
+    passwordExpiresAt: account.passwordExpiresAt?.getTime(),
   };
 }
 
@@ -214,15 +222,26 @@ export async function getMe(userId: string, role: Role): Promise<PublicUser> {
 }
 
 /** Change the authenticated account's password after verifying the current one. */
+/**
+ * Self-service password change. Clears `mustChangePassword` — the owner has now chosen their own
+ * secret — and returns a **fresh access token** so the forced-change gate lifts on the next
+ * request instead of after the old token expires.
+ */
 export async function changePassword(
   userId: string,
   role: Role,
   currentPassword: string,
   newPassword: string,
-): Promise<void> {
+): Promise<{ accessToken: string }> {
   const hash = await getPasswordHashById(userId, role);
   if (!hash) throw ApiError.notFound('Account not found');
   const ok = await verifyPassword(currentPassword, hash);
   if (!ok) throw ApiError.badRequest('Current password is incorrect');
-  await setPasswordById(userId, role, await hashPassword(newPassword));
+  if (currentPassword === newPassword) {
+    throw ApiError.badRequest('New password must be different from the current one');
+  }
+  await setPasswordById(userId, role, await hashPassword(newPassword), false);
+  const account = await findAccountById(userId, role);
+  if (!account) throw ApiError.notFound('Account not found');
+  return { accessToken: signAccessToken(principalOf(account)) };
 }

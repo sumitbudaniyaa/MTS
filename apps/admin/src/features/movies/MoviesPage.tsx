@@ -580,6 +580,8 @@ interface DetailBooking {
 }
 interface DetailAllocation {
   unit: string;
+  /** Allocations are per (unit, rank), so without this a unit renders as N identical rows. */
+  rank: string | null;
   allocated: number;
   /** Seats the unit's members actually hold — can exceed `allocated` once the pool is open. */
   booked: number;
@@ -769,6 +771,7 @@ function MovieDetailModal({ movie, onClose }: { movie: Movie; onClose: () => voi
                 head={
                   <tr>
                     <Th>Unit</Th>
+                    <Th>Rank</Th>
                     <Th>Allocated</Th>
                     <Th>Holding</Th>
                     <Th>Status</Th>
@@ -776,8 +779,9 @@ function MovieDetailModal({ movie, onClose }: { movie: Movie; onClose: () => voi
                 }
               >
                 {data.allocations.map((a) => (
-                  <tr key={a.unit}>
+                  <tr key={`${a.unit}:${a.rank ?? 'ALL'}`}>
                     <Td className="font-medium">{a.unit}</Td>
+                    <Td>{a.rank ? <Badge tone="accent">{a.rank}</Badge> : '—'}</Td>
                     <Td>{a.allocated}</Td>
                     {/* Live count, not the frozen quota counter — so it reads above `allocated`
                         when a unit has taken seats from the open pool. */}

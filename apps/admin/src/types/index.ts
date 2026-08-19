@@ -44,6 +44,10 @@ export interface Personnel {
   lastLoginAt?: string | null;
   failedLoginCount?: number;
   lockedUntil?: string | null;
+  /** Still holding a password an admin set (the shared default, or a reset). */
+  mustChangePassword?: boolean;
+  /** When that borrowed password stops working. */
+  passwordExpiresAt?: string | null;
 }
 
 export type MovieStatus =

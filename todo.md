@@ -678,3 +678,78 @@ to seat level. Large, multi-milestone effort — build after quick wins (#1,#2,#
 - [x] **Render production deployment TypeScript fix (`seating.service.ts`).** Resolved TS2322 type error (`Type 'string | null' is not assignable to type '"OFFICER" | "JCO" | "JAWAN"'`) on Render deployment by explicitly annotating `allocationList` array item types in `seating.service.ts`.
 - [x] **ESLint code quality cleanup (`personnel.service.ts`).** Fixed `prefer-const` rule violation (`let username` -> `const username`).
 - [x] **Backend test suite expanded & verified — 61/61 tests green.** 100% clean typecheck (`tsc --noEmit`), lint (`eslint`), and build (`tsc -b` / `vite build`) across all 4 monorepo packages (`backend`, `admin`, `user`, `scanner`).
+- [x] **Seat allocation is now a two-step dialog: pools by rank, then division into units.**
+      Step 1 sets how many of the hall's seats belong to Officer / JCO / Jawan and must add up to
+      capacity — every seat belongs to one rank pool and only that rank can book it. Step 2 takes
+      each pool and either splits it **equally** across active units or accepts manual per-unit
+      numbers, chosen **per rank**. 18 seats / 3 units as Officer 9, JCO 3, Jawan 6 gives every
+      unit 3 / 1 / 2.
+      The two steps were previously one grid: rank pools were *derived* from the per-unit numbers,
+      and "Distribute Equally" invented rank totals from hardcoded 25/30/45% ratios whenever they
+      were still zero — a policy choice nobody had made. Now the admin states the rank split
+      explicitly and picks the distribution method for each rank independently.
+      `equalSplit()` hands the remainder to the units at the front of the list (7 across 3 is
+      3/2/2, never dropping a seat), the dialog says so when a pool doesn't divide evenly,
+      switching a rank to manual seeds from the equal split so it starts balanced, and Save stays
+      disabled until every rank reconciles. Existing allocations reopen in **manual** mode so
+      reopening the dialog never silently re-flattens numbers someone set deliberately.
+- [x] **Verified the surrounding features against the live code** (not assumed): check-in grace
+      and no-show reclaim read `noShowGraceMinutes` from the live settings; seat holds use
+      `seatHoldSeconds` and are swept every 20s by the scheduler, with the duration shipped to the
+      picker so client and server agree; cancellation refunds by the booking's own source —
+      unit-quota bookings to their `(unit, rank)` row, pool bookings to `poolSeats`; opening the
+      pool dissolves unit quota immediately and the server refuses to close it again.
+      **Open pool grants exactly one cross-rank step: JCO → Jawan.** Officers cannot take
+      Jawan/JCO seats and Jawans cannot take JCO/Officer seats — which is what was asked for.
+      **60/60 backend tests, all four apps build.**
+- [x] **Borrowed passwords now expire, with a 30-day grace and a real server-side gate.**
+      `mustChangePassword` + `passwordExpiresAt` on all three account collections, set whenever
+      the holder did not choose the password: the shared personnel default, a generated scanner
+      credential, or an admin reset. Inside the window nothing changes except a countdown banner
+      in all three apps; past it, `requireCurrentPassword` refuses every route except `/auth`.
+      Mounted once on `apiRouter` so a new feature slice cannot forget it — after
+      `authenticateOptional`, because each feature router mounts its own `authenticate` *later*,
+      so without a best-effort read `req.principal` was undefined and the gate waved everyone
+      through (caught by the test, which returned 200 instead of 403).
+      The deadline rides in the token as a timestamp, not a boolean, so a window lapsing mid-token
+      is caught on the next request; a successful change reissues the token so the gate lifts
+      immediately rather than when the old one expires. `/auth` is deliberately ungated or an
+      expired holder could never reach `change-password` to recover.
+- [x] **Scanner operators get a generated password instead of the shared default.** They have no
+      self-service change screen, so a default everyone knows is one they could never replace.
+      `generateTempPassword()` issues a per-operator credential in the unambiguous ticket-code
+      alphabet (safe to read aloud), returned **once** in the create response and never stored in
+      plaintext; the admin dialog shows it with a copy button and states the 30-day deadline. The
+      password field was removed from the scanner create form entirely.
+- [x] **An admin password reset now also clears the lockout.** Resetting is almost always the fix
+      *for* a lockout, and previously the new password still failed until the 15-minute timer ran
+      down. Applies to both personnel and admin accounts; explicit unlock endpoints already
+      existed for both.
+- [x] **The admin personnel list badges temporary passwords** — "Temp password · 12d", turning red
+      once expired — so the shared default is visible instead of surfacing only when it locks
+      someone out. **61/61 backend tests, all four apps build.**
+- [x] **Admin/super-admin creation also issues a generated password.** `password` is now optional
+      on `POST /admins`; omitted, the server generates one and returns it once, so no human picks
+      another human's credential and there is no shared default in that collection either. The
+      create dialog lost its password field and shows the issued one with a copy button.
+      This exposed a gap I had just created: admins now carry `mustChangePassword`, but the
+      **super-admin console had no countdown banner** — a newly created super admin would have met
+      the expiry gate with no explanation anywhere. Banner mounted in `AppLayout` too, so all
+      three shells warn.
+      Left alone deliberately: `npm run seed:admin` / `seed:superadmin` do **not** set the flag.
+      That password comes from env vars the operator chose for bootstrap/recovery, not a shared
+      default, and forcing a change on the recovery account is a riskier default than the benefit.
+- [x] **Corrected an over-application of the forced password change.** The previous entries applied
+      `mustChangePassword` + the 30-day deadline to every account whose password someone else set —
+      including scanner operators and admins. That was wrong: the rotation exists because personnel
+      share one publicly-known default, and scanners/admins each receive a credential generated for
+      them alone, so there is no shared secret to rotate.
+      Now: **USER accounts only** carry the flag, the deadline and the gate. Scanner and admin
+      creation still generate a unique password (returned once, with a copy button) but set no
+      deadline. An admin reset re-arms the deadline for a USER and not for the others. The
+      change-password banner was removed from the **scanner** app entirely and from **both** admin
+      shells, and the component files deleted — with the flag scoped to USER those were dead code.
+      `AuthUser` in the admin and scanner apps dropped the two fields; the admin's `Personnel` type
+      keeps them, since the personnel list still badges who is on the shared default.
+      Test added asserting the scoping directly: a created USER carries the flag and a deadline, a
+      created scanner carries neither and gets a generated password back. **62/62 tests.**

@@ -15,6 +15,13 @@ const scannerSchema = new Schema(
     role: { type: String, default: Roles.SCANNER, immutable: true },
     active: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },
+    // Set whenever SOMEONE ELSE chose this account's password — the shared default on
+    // creation, or an admin resetting it. Cleared only when the owner sets their own. While it
+    // is true the API refuses everything except reading yourself and changing your password.
+    mustChangePassword: { type: Boolean, default: false },
+    // Deadline for that change. Until it passes the account works normally and the apps nudge;
+    // after it, the API refuses everything but reading yourself and setting a new password.
+    passwordExpiresAt: { type: Date, default: null },
     failedLoginCount: { type: Number, default: 0 },
     lockedUntil: { type: Date, default: null },
   },

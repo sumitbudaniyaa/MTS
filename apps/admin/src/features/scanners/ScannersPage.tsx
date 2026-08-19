@@ -198,7 +198,6 @@ export function ScannersPage() {
 
 interface ScannerForm {
   mobile: string;
-  password: string;
 }
 
 function ScannerFormModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
@@ -207,15 +206,73 @@ function ScannerFormModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
     handleSubmit,
     formState: { errors },
   } = useForm<ScannerForm>();
+  /** The generated password, shown once. Nothing stores the plaintext. */
+  const [issued, setIssued] = useState<{ mobile: string; password: string } | null>(null);
 
   const save = useMutation({
-    mutationFn: (v: ScannerForm) => api.post('/personnel', { ...v, role: 'SCANNER' }),
-    onSuccess: () => {
+    // No password field: the server generates one per operator. Scanner operators have no
+    // self-service change screen, so a shared default would be a credential they could never
+    // replace — each gets their own, handed over once.
+    mutationFn: (v: ScannerForm) =>
+      api
+        .post<{ generatedPassword?: string }>('/personnel', { ...v, role: 'SCANNER' })
+        .then((r) => ({ mobile: v.mobile, password: r.data.generatedPassword ?? '' })),
+    onSuccess: (result) => {
       toast.success('Scanner created');
-      onSaved();
+      setIssued(result);
     },
     onError: (e) => toast.error(apiErrorMessage(e)),
   });
+
+  // Once the password is on screen the account already exists, so the only action left is to
+  // acknowledge it — closing also refreshes the list.
+  if (issued) {
+    return (
+      <Modal
+        open
+        onClose={() => {
+          onSaved();
+          onClose();
+        }}
+        title="Scanner created"
+        footer={
+          <Button
+            onClick={() => {
+              onSaved();
+              onClose();
+            }}
+          >
+            Done
+          </Button>
+        }
+      >
+        <p className="text-sm text-muted">
+          Give this password to <span className="font-medium text-fg">{issued.mobile}</span>. It is
+          shown only once — if it is lost, reset the account instead.
+        </p>
+        <div className="mt-3 flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2.5">
+          <code className="flex-1 select-all font-mono text-base tracking-wide text-fg">
+            {issued.password}
+          </code>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              void navigator.clipboard
+                ?.writeText(issued.password)
+                .then(() => toast.success('Copied'))
+                .catch(() => toast.error('Could not copy — select it manually'));
+            }}
+          >
+            Copy
+          </Button>
+        </div>
+        <p className="mt-3 text-xs text-muted">
+          They must change it within 30 days, and the app will refuse to scan after that.
+        </p>
+      </Modal>
+    );
+  }
 
   return (
     <Modal
@@ -234,21 +291,17 @@ function ScannerFormModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
         </>
       }
     >
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4">
         <Input
           label="Mobile"
           error={errors.mobile?.message}
           disabled={save.isPending}
           {...mobileField(register('mobile', { required: 'Required', pattern: { value: /^\d{10}$/, message: '10 digits' } }))}
         />
-        <Input
-          label="Password"
-          type="password"
-          error={errors.password?.message}
-          disabled={save.isPending}
-          {...register('password', { required: 'Required', minLength: { value: 8, message: 'Min 8' } })}
-        />
       </div>
+      <p className="text-xs text-muted">
+        A password is generated for this operator and shown once after you create the account.
+      </p>
     </Modal>
   );
 }

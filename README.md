@@ -8,7 +8,7 @@ the full design and [todo.md](todo.md) for status.
 
 | Path           | What                                   | Status |
 |----------------|----------------------------------------|--------|
-| `apps/backend` | Node + Express + TS + Mongoose + socket.io | ✅ complete (61 tests) |
+| `apps/backend` | Node + Express + TS + Mongoose + socket.io | ✅ complete (60 tests) |
 | `apps/admin`   | React 19 Admin Portal (web, desktop, light/dark) | ✅ complete |
 | `apps/user`    | React 19 User app (web, mobile-first, live seat picker) | ✅ complete |
 | `apps/scanner` | React 19 Scanner app (web, mobile, QR camera) | ✅ complete |
@@ -17,9 +17,9 @@ the full design and [todo.md](todo.md) for status.
 > Atlas (or a local mongod)** — there is no Docker.
 
 ### Highlights
-- **Rank-based seat structure & rank-aware unit quotas** — admin designs the auditorium (rows/seats, allowed ranks per row); users pick seats on a **live seat map** (socket.io) with short **seat holds**. Per-unit seat allocations support rank breakdown (`OFFICER`, `JCO`, `OR`, `ALL`) with an inline **"Distribute Equally Across Units"** action.
+- **Rank-based seat structure & rank-aware unit quotas** — admin designs the auditorium (rows/seats, allowed ranks per row); users pick seats on a **live seat map** (socket.io) with short **seat holds**. Seat allocation is **rank-first**: split the hall between `OFFICER` / `JCO` / `JAWAN`, then divide each rank's pool **equally across units or manually** — chosen per rank.
 - Three separate account collections (`admins` / `scanners` / `users`); flexible Unit Login Modes (`MOBILE` / `USERNAME`); spouse logs in with their own mobile/username + member password (shared family account).
-- Default personnel password (`Pass@2026`) when creating or bulk-importing members without an explicit password.
+- **Personnel only** get a shared default password (`Pass@2026`) on create/bulk-import, and must replace it within 30 days — after that the API refuses everything but changing it, and the admin personnel list badges who is still on it. **Scanner and admin accounts get a unique generated password instead**, shown once at creation, with no deadline.
 - Oversell-proof booking, refresh-token rotation, append-only audit, QR check-in, zero dependency CVEs across all 4 apps.
 
 ## Data Model — Separate Account Collections
@@ -160,7 +160,10 @@ Base path `/api/v1`. Full surface in [architecture.md](architecture.md#71-api-su
    restriction immediately, and cannot be closed again (see architecture.md §3.10). Saving a movie **immediately asks you to split
    its seats across units** — allocation is part of creating a movie, not a separate page. You
    can skip it (unallocated seats stay in the common pool) and re-open it later from the
-   **Allocate seats** action on the movie's row — up until showtime, when the split is frozen.
+   **Allocate seats** action on the movie's row. Allocation is **two steps**: first how many
+   seats each rank gets (must add up to capacity — only that rank can book them), then whether
+   each rank's pool is split **equally** across units or typed in by hand. 18 seats / 3 units as
+   Officer 9, JCO 3, Jawan 6 gives every unit 3 / 1 / 2 — up until showtime, when the split is frozen.
     A movie's **status advances by itself**: `DRAFT` → `SCHEDULED` (once allocated) → `OPEN`
     (booking window starts) → `COMPLETED` (end time). Editing locks once booking opens, and a
     movie with any booked ticket can't be deleted at all.

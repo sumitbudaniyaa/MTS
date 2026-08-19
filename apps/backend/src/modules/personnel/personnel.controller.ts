@@ -28,13 +28,19 @@ function assertCanManage(principalRole: Role | undefined, targetRole: Role): voi
 export const createPersonnel = asyncHandler(async (req: Request, res: Response) => {
   const body = req.body as CreatePersonnelInput;
   assertCanManage(req.principal?.role, body.role === Roles.SCANNER ? Roles.SCANNER : Roles.USER);
-  const user = await svc.createPersonnel(body);
+  const { doc, generatedPassword } = await svc.createPersonnel(body);
   await recordAudit({
     action: AuditAction.PERSONNEL_CREATE,
     req,
-    metadata: { personnelId: user.id, role: user.role },
+    // Records THAT a password was generated, never the password itself.
+    metadata: { personnelId: doc.id, role: doc.role, generatedPassword: Boolean(generatedPassword) },
   });
-  res.status(201).json({ personnel: svc.toPersonnelView(user) });
+  res.status(201).json({
+    personnel: svc.toPersonnelView(doc),
+    // Shown once to whoever created the account. Nothing stores the plaintext, so if this is
+    // lost the only route is an admin reset.
+    ...(generatedPassword ? { generatedPassword } : {}),
+  });
 });
 
 export const bulkCreatePersonnel = asyncHandler(async (req: Request, res: Response) => {

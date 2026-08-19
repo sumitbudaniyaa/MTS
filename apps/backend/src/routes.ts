@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { authenticateOptional, requireCurrentPassword } from './middleware/auth.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { unitRouter } from './modules/units/unit.routes.js';
 import { personnelRouter } from './modules/personnel/personnel.routes.js';
@@ -22,7 +23,20 @@ apiRouter.get('/', (_req, res) => {
   res.json({ name: 'Auditorium Booking API', version: 'v1' });
 });
 
+// `/auth` is deliberately NOT gated: an account whose temporary password has expired still has
+// to reach `/auth/me` and `/auth/change-password`, or it could never recover.
 apiRouter.use('/auth', authRouter);
+
+// Everything past here refuses an account whose borrowed password ran out of time. Mounted once
+// here rather than per-router so a new feature slice cannot forget it.
+//
+// `authenticateOptional` has to run first: each feature router mounts its own `authenticate`,
+// which happens *after* this point, so without a best-effort read there is no `req.principal`
+// here and the gate would wave everyone through. Optional rather than strict because some routes
+// past here are public (`/movies/available`) — an absent or bad token is left for the routers'
+// own `authenticate` to reject.
+apiRouter.use(authenticateOptional, requireCurrentPassword);
+
 apiRouter.use('/units', unitRouter);
 apiRouter.use('/personnel', personnelRouter);
 apiRouter.use('/movies', movieRouter);

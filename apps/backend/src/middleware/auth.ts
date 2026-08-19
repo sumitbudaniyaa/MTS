@@ -22,6 +22,31 @@ export const authenticate: RequestHandler = (req, _res, next) => {
 };
 
 /**
+ * Refuses the API to an account whose borrowed password has run out of time.
+ *
+ * A password someone else chose — the shared default at creation, or an admin reset — carries a
+ * deadline (`PASSWORD_GRACE_DAYS`). Inside the window the account works normally and the apps
+ * nudge; past it, this blocks everything. Mount it after `authenticate` on the protected
+ * routers, never on `/auth`, or the holder could not read themselves or set a new password and
+ * would be permanently stuck.
+ *
+ * Read from the token rather than the database so it costs nothing per request. The deadline is
+ * carried as a timestamp instead of a pre-computed boolean, so a window that lapses part-way
+ * through a token's life is noticed on the very next request.
+ */
+export const requireCurrentPassword: RequestHandler = (req, _res, next) => {
+  const p = req.principal;
+  if (!p?.mustChangePassword || !p.passwordExpiresAt) return next();
+  if (Date.now() <= p.passwordExpiresAt) return next(); // still inside the grace window
+  next(
+    ApiError.forbidden(
+      'Your temporary password has expired. Set a new password to continue.',
+      { code: 'PASSWORD_EXPIRED', expiredAt: new Date(p.passwordExpiresAt).toISOString() },
+    ),
+  );
+};
+
+/**
  * Best-effort authentication: populates `req.principal` when a valid token is present and
  * continues regardless. For endpoints that are authorized by something other than the access
  * token — logout, which is authorized by possession of the refresh cookie — and which must

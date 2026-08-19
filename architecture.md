@@ -70,7 +70,7 @@ src/
 | `settings`        | Admin-editable operational timings (singleton, fixed `_id`) | `visibilityLeadMinutes`, `noShowGraceMinutes`, `seatHoldSeconds`, `updatedBy` |
 | `auditoria`       | Physical venue layout (singleton) | `name`, `rows[]` → `{ label, seats[] → { number, allowedRanks[] } }` |
 | `movieseats`      | Per-movie seat inventory | `movie`, `row`, `number`, `label`, `allowedRanks[]`, `status` (FREE\|HELD\|BOOKED), `heldBy`, `holdExpiresAt`, `bookedBy`, `booking`, `ticketCode` |
-| `seatallocations` | Rank-aware per-unit quota | `movie`, `unit`, `rank` (OFFICER\|JCO\|OR\|ALL), `allocated`, `booked`, `released` |
+| `seatallocations` | Rank-aware per-unit quota | `movie`, `unit`, `rank` (OFFICER\|JCO\|JAWAN), `allocated`, `booked`, `released` |
 | `bookings`        | A booking = N tickets for one user/movie | `user`, `movie`, `quantity`, `source`, `idempotencyKey`, `tickets[]` |
 | `tickets`         | One seat = one QR (embedded in booking) | `code`, `seatLabel`, `status`, `checkedIn`, `checkedInAt`, `checkedInBy` + `checkedInByModel` (refPath→Scanner\|Admin) |
 | `auditlogs`       | Append-only audit trail | `user` (refPath→Admin/Scanner/User), `userModel`, `action`, `ip`, `metadata`, `createdAt` |
@@ -351,6 +351,19 @@ populates to `null`, silently losing the attribution.
   each movie row re-opens it later. Both use `features/seats/AllocateSeatsModal.tsx`, so the
   "total must equal capacity" rule lives in exactly one place. Allocation is **optional** —
   skipping leaves every seat in the common pool, which the dialog states explicitly.
+- **Allocation is a two-step dialog: pools by rank, then division into units.** Step 1 asks how
+  many of the hall's seats belong to Officers, JCOs and Jawans, and must add up to capacity —
+  every seat belongs to exactly one rank pool, and only that rank can book it. Step 2 takes each
+  rank's pool and either splits it **equally** across active units or lets the admin type each
+  unit's share, chosen **per rank**. So 18 seats across 3 units as Officer 9 / JCO 3 / Jawan 6
+  becomes 3/1/2 for every unit.
+  The steps are separate because they are separate decisions. The previous single grid derived
+  the rank pools *from* the per-unit numbers and its "distribute equally" button invented rank
+  totals from hardcoded 25/30/45% ratios whenever they were zero — a policy nobody had chosen.
+  `equalSplit()` gives the remainder to the units at the front of the list, so 7 across 3 is
+  3/2/2 and never loses a seat; switching a rank to manual seeds from the equal split, so the
+  numbers already reconcile and only the ones you change need thought. Save is blocked until
+  every rank's shares add up to its pool.
 - **The seat cap is the lesser of family size and unit quota**, resolved in one place
   (`seatAllowance()`) that the picker's counter, the hold check and the Confirm error all read,
   so they cannot report different numbers. A family of four facing a unit with one seat left
@@ -542,6 +555,28 @@ Notable post-build changes folded in:
 - **ESLint quality cleanup (`personnel.service.ts`)**: Replaced `let` with `const` on `username` to enforce `prefer-const` across the entire codebase (zero ESLint errors across all 4 apps).
 - **Rank-aware unit seat allocations & equal distribution**: `SeatAllocationModel` tracks quotas per unit and per rank (`${unit}:${rank}` composite key), ensuring allocations align strictly with rank allowances, with an inline "Distribute Equally Across Units" option in the Admin allocation modal.
 - **Unit login modes (`MOBILE` / `USERNAME`)**: Units can specify their login authentication mode, supporting personnel logins via mobile or username/service number across User and Admin frontends.
+- **The shared personnel default expires. Only personnel are affected.** `mustChangePassword` +
+  `passwordExpiresAt` are set for **USER accounts only**, because they are the sole accounts handed
+  a password everybody knows. Scanner operators and admins each receive a credential generated for
+  them alone — there is no shared secret to rotate, so no deadline, no gate and no banner in those
+  apps. An admin reset re-arms the deadline for a USER and does nothing of the sort for the others.
+  The deadline is `PASSWORD_GRACE_DAYS` (30) of `PASSWORD_GRACE_DAYS` (30). Inside the window the account works
+  normally and all three apps show a countdown banner; past it, `requireCurrentPassword` refuses
+  everything except `/auth` (mounted once on `apiRouter`, after `authenticateOptional`, so a new
+  feature slice cannot forget it and the holder can still read themselves and set a new password).
+  The deadline rides in the access token as a timestamp rather than a pre-computed boolean, so a
+  window lapsing mid-token is noticed on the next request, and a successful change reissues the
+  token so the gate lifts at once instead of after expiry. A self-service change clears both
+  fields; an admin reset sets them again **and lifts any lockout**, since a reset is normally the
+  fix for one. The admin personnel list badges who is still on a temporary password and how many
+  days remain — otherwise a shared default is invisible until it locks someone out.
+- **Admin and scanner accounts get a generated password, never a shared default.** For admins the
+  `password` field is optional on create — omit it and the server issues one; there is no default
+  at all for those collections, and the creator should not be choosing another person's credential.
+  `generateTempPassword()` uses the unambiguous ticket-code alphabet (readable aloud, no 0/O or
+  1/I), and the password is returned **once** in the create response, never stored in plaintext.
+  Both create dialogs show it with a copy button. Because each is unique to its holder, neither
+  carries a change deadline.
 - **Default password for personnel (`Pass@2026`)**: Personnel created manually or via Excel/CSV bulk import default to `'Pass@2026'` when a password is omitted.
 - **Field encryption sparse index fix**: `fieldCrypto` sets unpopulated encrypted hashes to `undefined` rather than `null` so MongoDB sparse unique indexes disregard empty values (e.g. unpopulated spouse mobiles).
 - **Super admin seed reset & unlock**: `seedSuperAdmin.ts` updates existing super admin passwords, resets failed login counters, and unlocks accounts.

@@ -414,19 +414,78 @@ function AdminsCard() {
 function CreateAdminDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [mobile, setMobile] = useState('');
   const [name, setName] = useState('');
-  const [password, setPassword] = useState('');
   const [role, setRole] = useState<'ADMIN' | 'SUPER_ADMIN'>('ADMIN');
+  /** The generated password, shown once. Nothing stores the plaintext. */
+  const [issued, setIssued] = useState<{ mobile: string; password: string } | null>(null);
 
   const save = useMutation({
-    mutationFn: () => api.post('/admins', { mobile, name: name || undefined, password, role }),
-    onSuccess: () => {
+    // No password field: the server generates one. There is deliberately no shared default for
+    // admin accounts, and the creator should not be choosing someone else's credential.
+    mutationFn: () =>
+      api
+        .post<{ generatedPassword?: string }>('/admins', {
+          mobile,
+          name: name || undefined,
+          role,
+        })
+        .then((r) => ({ mobile, password: r.data.generatedPassword ?? '' })),
+    onSuccess: (result) => {
       toast.success('Administrator added');
-      onSaved();
+      setIssued(result);
     },
     onError: (e) => toast.error(apiErrorMessage(e)),
   });
 
-  const valid = /^\d{10}$/.test(mobile) && password.length >= 8;
+  const valid = /^\d{10}$/.test(mobile);
+
+  // The account exists by this point, so the only thing left is to hand the password over.
+  if (issued) {
+    return (
+      <Modal
+        open
+        onClose={() => {
+          onSaved();
+          onClose();
+        }}
+        title="Administrator added"
+        footer={
+          <Button
+            onClick={() => {
+              onSaved();
+              onClose();
+            }}
+          >
+            Done
+          </Button>
+        }
+      >
+        <p className="text-sm text-muted">
+          Give this password to <span className="font-medium text-fg">{issued.mobile}</span>. It is
+          shown only once — if it is lost, reset the account instead.
+        </p>
+        <div className="mt-3 flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2.5">
+          <code className="flex-1 select-all font-mono text-base tracking-wide text-fg">
+            {issued.password}
+          </code>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              void navigator.clipboard
+                ?.writeText(issued.password)
+                .then(() => toast.success('Copied'))
+                .catch(() => toast.error('Could not copy — select it manually'));
+            }}
+          >
+            Copy
+          </Button>
+        </div>
+        <p className="mt-3 text-xs text-muted">
+          They must change it within 30 days, after which the account stops working until they do.
+        </p>
+      </Modal>
+    );
+  }
 
   return (
     <Modal
@@ -457,13 +516,9 @@ function CreateAdminDialog({ onClose, onSaved }: { onClose: () => void; onSaved:
         />
         <Input label="Name (optional)" value={name} disabled={save.isPending} onChange={(e) => setName(e.target.value)} />
       </div>
-      <PasswordInput
-        label="Password"
-        placeholder="Min 8 characters"
-        value={password}
-        disabled={save.isPending}
-        onChange={(e) => setPassword(e.target.value)}
-      />
+      <p className="text-xs text-muted">
+        A password is generated for this account and shown once after you create it.
+      </p>
       <Select label="Tier" value={role} disabled={save.isPending} onChange={(e) => setRole(e.target.value as 'ADMIN' | 'SUPER_ADMIN')}>
         <option value="ADMIN">Admin — movies, auditorium & operations</option>
         <option value="SUPER_ADMIN">Super Admin — units, personnel & admins</option>

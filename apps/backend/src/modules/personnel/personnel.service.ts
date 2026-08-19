@@ -7,12 +7,15 @@ import {
   type UserDoc,
 } from '../../models/index.js';
 import { ApiError } from '../../utils/apiError.js';
+import { PASSWORD_GRACE_DAYS } from '../auth/account.service.js';
 import { hashPassword } from '../../utils/password.js';
+import { generateTempPassword } from '../../utils/ids.js';
 import { buildMeta, type Paginated } from '../../utils/pagination.js';
 import { mobileTaken } from '../auth/account.service.js';
 import { blindIndex } from '../../utils/fieldCrypto.js';
 import { MaritalStatus, Rank } from '../../constants/enums.js';
 import { Roles, type Role } from '../../types/index.js';
+import { DEFAULT_PERSONNEL_PASSWORD } from './personnel.schema.js';
 import type {
   BulkPersonnelInput,
   CreatePersonnelInput,
@@ -29,9 +32,33 @@ async function assertUnitExists(unitId: string): Promise<void> {
   if (!unit.active) throw ApiError.badRequest('Referenced unit is inactive');
 }
 
-export async function createPersonnel(input: CreatePersonnelInput): Promise<ManagedDoc> {
-  const rawPassword = input.password && input.password.trim() ? input.password : 'Pass@2026';
+/**
+ * A created account and, when we invented the password, the plaintext — returned **once** so the
+ * admin can hand it over. Never stored; only the hash is.
+ */
+export interface CreatedPersonnel {
+  doc: ManagedDoc;
+  /** Set only for a generated password (scanner operators). Null when the caller supplied one
+   *  or when the shared personnel default was applied, since that one is already known. */
+  generatedPassword: string | null;
+}
+
+export async function createPersonnel(input: CreatePersonnelInput): Promise<CreatedPersonnel> {
+  const supplied = input.password && input.password.trim() ? input.password : null;
+  const isScanner = input.role === Roles.SCANNER;
+  // Scanner operators never get the shared default: they have no self-service change screen, so
+  // a password everyone knows would be one they could not replace. Each gets its own generated
+  // credential, surfaced once to whoever created the account.
+  const generatedPassword = !supplied && isScanner ? generateTempPassword() : null;
+  const rawPassword = supplied ?? generatedPassword ?? DEFAULT_PERSONNEL_PASSWORD;
   const passwordHash = await hashPassword(rawPassword);
+  // The forced change applies to **personnel only**, because they are the ones handed a shared
+  // password everyone knows. A scanner operator gets a credential generated just for them, so
+  // there is no shared secret to rotate and no deadline.
+  const mustChangePassword = !isScanner;
+  const passwordExpiresAt = mustChangePassword
+    ? new Date(Date.now() + PASSWORD_GRACE_DAYS * 24 * 60 * 60_000)
+    : null;
 
   // SCANNER operators go to their own collection (no unit/family fields).
   if (input.role === Roles.SCANNER) {
@@ -39,7 +66,13 @@ export async function createPersonnel(input: CreatePersonnelInput): Promise<Mana
     if (await mobileTaken(input.mobile, Roles.SCANNER)) {
       throw ApiError.conflict('An account with this mobile already exists');
     }
-    return ScannerModel.create({ mobile: input.mobile, passwordHash });
+    const scanner = await ScannerModel.create({
+      mobile: input.mobile,
+      passwordHash,
+      mustChangePassword,
+      passwordExpiresAt,
+    });
+    return { doc: scanner, generatedPassword };
   }
 
   if (!input.unit) throw ApiError.badRequest('unit is required for USER personnel');
@@ -83,7 +116,9 @@ export async function createPersonnel(input: CreatePersonnelInput): Promise<Mana
     }
   }
 
-  return UserModel.create({
+  const user = await UserModel.create({
+    mustChangePassword,
+    passwordExpiresAt,
     mobile,
     username: username ?? undefined,
     passwordHash,
@@ -94,6 +129,7 @@ export async function createPersonnel(input: CreatePersonnelInput): Promise<Mana
     spouseUsername,
     numberOfKids: input.numberOfKids,
   });
+  return { doc: user, generatedPassword };
 }
 
 export interface BulkResult {
@@ -115,7 +151,7 @@ export async function createPersonnelBulk(input: BulkPersonnelInput): Promise<Bu
       await createPersonnel({
         mobile: row.mobile,
         username: row.username,
-        password: row.password ?? 'Pass@2026',
+        password: row.password ?? DEFAULT_PERSONNEL_PASSWORD,
         role: Roles.USER,
         unit: input.unit,
         rank: row.rank ?? Rank.JAWAN,
@@ -190,7 +226,18 @@ export async function updatePersonnel(
   if (!doc) throw ApiError.notFound('Personnel not found');
 
   if (input.active !== undefined) doc.active = input.active;
-  if (input.password) doc.passwordHash = await hashPassword(input.password);
+  if (input.password) {
+    doc.passwordHash = await hashPassword(input.password);
+    // Personnel only — see `createPersonnel`. A scanner operator's reset is just a new credential.
+    if (doc.role === Roles.USER) {
+      doc.mustChangePassword = true;
+      doc.passwordExpiresAt = new Date(Date.now() + PASSWORD_GRACE_DAYS * 24 * 60 * 60_000);
+    }
+    // A reset is almost always *because* they are locked out, so clear the lockout too —
+    // otherwise the new password still fails until the timer runs down.
+    doc.failedLoginCount = 0;
+    doc.lockedUntil = null;
+  }
 
   // Personnel-only (USER) fields.
   if (doc.role === Roles.USER) {
@@ -252,6 +299,10 @@ export function toPersonnelView(doc: ManagedDoc, role: Role = Roles.ADMIN) {
     active: doc.active,
     failedLoginCount: doc.failedLoginCount ?? 0,
     lockedUntil: doc.lockedUntil ?? null,
+    // Surfaced so an admin can see who is still on a password they didn't choose, and how long
+    // they have left — otherwise the shared default is invisible until it locks someone out.
+    mustChangePassword: doc.mustChangePassword ?? false,
+    passwordExpiresAt: doc.passwordExpiresAt ?? null,
   };
   if (role !== Roles.ADMIN || !isUser) return base;
   const user = doc as UserDoc;

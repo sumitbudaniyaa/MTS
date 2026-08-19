@@ -6,6 +6,8 @@ import { UserModel, RefreshTokenModel, ScannerModel } from '../src/models/index.
 import { hashPassword } from '../src/utils/password.js';
 import { hashRefreshToken } from '../src/utils/jwt.js';
 import { Roles } from '../src/types/index.js';
+import { UnitModel } from '../src/models/index.js';
+import { createPersonnel } from '../src/modules/personnel/personnel.service.js';
 
 /** Spin up the real app on an ephemeral port and return a base URL + closer. */
 function startApp(): Promise<{ url: string; close: () => void }> {
@@ -391,5 +393,110 @@ describe('cross-site request forgery on session endpoints', () => {
     } finally {
       close();
     }
+  });
+});
+
+describe('temporary passwords expire', () => {
+  beforeEach(seedUser);
+
+  it('works inside the grace window, blocks after it, and unblocks on change', async () => {
+    const { url, close } = await startApp();
+    try {
+      // The seeded user chose their own password, so mark it borrowed the way creation does.
+      const inGrace = new Date(Date.now() + 30 * 24 * 60 * 60_000);
+      await UserModel.updateOne(
+        { role: Roles.USER },
+        { $set: { mustChangePassword: true, passwordExpiresAt: inGrace } },
+      );
+
+      let res = await fetch(`${url}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mobile: MOBILE, password: PASSWORD, role: Roles.USER }),
+      });
+      let body = (await res.json()) as {
+        accessToken: string;
+        user: { mustChangePassword: boolean; passwordExpiresAt: string | null };
+      };
+      // Login still succeeds and tells the client to nudge — nobody is locked out on day one.
+      expect(res.status).toBe(200);
+      expect(body.user.mustChangePassword).toBe(true);
+      expect(body.user.passwordExpiresAt).toBeTruthy();
+
+      // Inside the window the API works normally.
+      const ok = await fetch(`${url}/api/v1/movies/available`);
+      expect(ok.status).toBe(200);
+
+      // Now move the deadline into the past and log in again for a token carrying it.
+      await UserModel.updateOne(
+        { role: Roles.USER },
+        { $set: { passwordExpiresAt: new Date(Date.now() - 1000) } },
+      );
+      res = await fetch(`${url}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mobile: MOBILE, password: PASSWORD, role: Roles.USER }),
+      });
+      body = (await res.json()) as typeof body;
+      const stale = body.accessToken;
+
+      // Protected routes are refused…
+      const blocked = await fetch(`${url}/api/v1/bookings`, {
+        headers: { authorization: `Bearer ${stale}` },
+      });
+      expect(blocked.status).toBe(403);
+      expect(((await blocked.json()) as { error: { details?: { code?: string } } }).error.details?.code)
+        .toBe('PASSWORD_EXPIRED');
+
+      // …but the two routes needed to recover are not, or the holder could never get unstuck.
+      const me = await fetch(`${url}/api/v1/auth/me`, {
+        headers: { authorization: `Bearer ${stale}` },
+      });
+      expect(me.status).toBe(200);
+
+      const changed = await fetch(`${url}/api/v1/auth/change-password`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${stale}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ currentPassword: PASSWORD, newPassword: 'BrandNew123' }),
+      });
+      expect(changed.status).toBe(200);
+      const { accessToken: fresh } = (await changed.json()) as { accessToken: string };
+
+      // The reissued token clears the gate immediately rather than after the old one expires.
+      const after = await fetch(`${url}/api/v1/bookings`, {
+        headers: { authorization: `Bearer ${fresh}` },
+      });
+      expect(after.status).toBe(200);
+    } finally {
+      close();
+    }
+  });
+});
+
+describe('the forced password change applies to personnel only', () => {
+  it('flags a USER but not a scanner operator', async () => {
+    const unit = await UnitModel.create({ name: 'FlagScope' });
+
+    const person = await createPersonnel({
+      mobile: '9000000201',
+      role: Roles.USER,
+      unit: String(unit._id),
+      rank: 'JAWAN',
+      numberOfKids: 0,
+    } as Parameters<typeof createPersonnel>[0]);
+    // Personnel are handed the shared default, so they carry the deadline.
+    expect(person.doc.mustChangePassword).toBe(true);
+    expect(person.doc.passwordExpiresAt).toBeTruthy();
+    expect(person.generatedPassword).toBeNull();
+
+    const scanner = await createPersonnel({
+      mobile: '9000000202',
+      role: Roles.SCANNER,
+    } as Parameters<typeof createPersonnel>[0]);
+    // A scanner gets a credential generated for them alone — no shared secret, so no deadline
+    // and no nudge. The password comes back once so it can be handed over.
+    expect(scanner.generatedPassword).toBeTruthy();
+    expect(scanner.doc.mustChangePassword).toBe(false);
+    expect(scanner.doc.passwordExpiresAt).toBeNull();
   });
 });

@@ -1,4 +1,11 @@
 import { z } from 'zod';
+
+/**
+ * Starter password for accounts created without one. Deliberately a single named constant: it is
+ * a shared, publicly-known secret, so every place that applies it must also mark the account as
+ * `mustChangePassword` with a deadline — see `createPersonnel`.
+ */
+export const DEFAULT_PERSONNEL_PASSWORD = 'Pass@2026';
 import { MaritalStatus, Rank } from '../../constants/enums.js';
 import { Roles } from '../../types/index.js';
 
@@ -13,7 +20,7 @@ export const createPersonnelSchema = z
   .object({
     mobile: mobile.optional(),
     username: username.optional(),
-    password: z.string().min(8).max(128).optional().default('Pass@2026'),
+    password: z.string().min(8).max(128).optional().default(DEFAULT_PERSONNEL_PASSWORD),
     role: z.enum([Roles.USER, Roles.SCANNER]).default(Roles.USER),
     unit: z.string().regex(/^[a-f\d]{24}$/i).optional(),
     rank: z.nativeEnum(Rank).default(Rank.JAWAN),
@@ -36,7 +43,7 @@ export const bulkPersonnelSchema = z.object({
       z.object({
         mobile: mobile.optional(),
         username: username.optional(),
-        password: z.string().min(8).max(128).optional().default('Pass@2026'),
+        password: z.string().min(8).max(128).optional().default(DEFAULT_PERSONNEL_PASSWORD),
         rank: z.nativeEnum(Rank).optional(),
         maritalStatus: z.nativeEnum(MaritalStatus).optional(),
         spouseMobile: mobile.optional(),

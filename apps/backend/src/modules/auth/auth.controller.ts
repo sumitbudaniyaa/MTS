@@ -225,7 +225,14 @@ export const meController = asyncHandler(async (req: Request, res: Response) => 
 export const changePasswordController = asyncHandler(async (req: Request, res: Response) => {
   if (!req.principal) throw ApiError.unauthorized();
   const { currentPassword, newPassword } = req.body as ChangePasswordInput;
-  await changePassword(req.principal.sub, req.principal.role, currentPassword, newPassword);
+  const { accessToken } = await changePassword(
+    req.principal.sub,
+    req.principal.role,
+    currentPassword,
+    newPassword,
+  );
   await recordAudit({ action: AuditAction.PASSWORD_CHANGE, req });
-  res.json({ success: true });
+  // A fresh token so a caller who was past the grace deadline is unblocked immediately, rather
+  // than staying locked out until their old token expires.
+  res.json({ success: true, accessToken });
 });

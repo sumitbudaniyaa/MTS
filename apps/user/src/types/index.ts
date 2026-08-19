@@ -6,6 +6,10 @@ export interface AuthUser {
   name: string;
   role: Role;
   unit: string | null;
+  /** Still holding a password an admin set; prompt for a new one. */
+  mustChangePassword?: boolean;
+  /** When the borrowed password stops working — used to count down the nudge. */
+  passwordExpiresAt?: string | null;
 }
 
 /** USER-facing movie projection — no unit/allocation/internal fields. */

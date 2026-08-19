@@ -8,6 +8,7 @@ import { AuditAction } from '../../constants/enums.js';
 import { recordAudit } from '../audit/audit.service.js';
 import { AdminModel } from '../../models/index.js';
 import { hashPassword } from '../../utils/password.js';
+import { generateTempPassword } from '../../utils/ids.js';
 import { mobileTaken } from '../auth/account.service.js';
 import { Roles } from '../../types/index.js';
 
@@ -15,7 +16,9 @@ export const adminRouter = Router();
 
 const createAdminSchema = z.object({
   mobile: z.string().regex(/^\d{10}$/, 'Mobile must be 10 digits'),
-  password: z.string().min(8).max(128),
+  // Optional: omit it and the server generates one, returned once. Nobody should be choosing
+  // another person's credential, and there is deliberately no shared default for admins.
+  password: z.string().min(8).max(128).optional(),
   name: z.string().trim().max(80).optional(),
   // Which tier to create. Defaults to an operational ADMIN.
   role: z.enum([Roles.ADMIN, Roles.SUPER_ADMIN]).optional(),
@@ -50,19 +53,29 @@ adminRouter.post(
     if (await mobileTaken(mobile, Roles.ADMIN)) {
       throw ApiError.conflict('An account with this mobile already exists');
     }
+    // Generated unless the creator insisted on a specific one. Either way the holder did not
+    // choose it, so it carries the change deadline below.
+    const generatedPassword = password ? null : generateTempPassword();
     const admin = await AdminModel.create({
       mobile,
-      passwordHash: await hashPassword(password),
+      passwordHash: await hashPassword(password ?? generatedPassword!),
       name: name ?? '',
       role: role ?? Roles.ADMIN,
     });
-    // Privilege grant — the tier is the whole point of the record.
+    // Privilege grant — the tier is the whole point of the record. Notes THAT a password was
+    // generated, never the password.
     await recordAudit({
       action: AuditAction.ADMIN_CREATE,
       req,
-      metadata: { adminId: admin.id, grantedRole: admin.role, name: admin.name },
+      metadata: {
+        adminId: admin.id,
+        grantedRole: admin.role,
+        name: admin.name,
+        generatedPassword: Boolean(generatedPassword),
+      },
     });
-    res.status(201).json({ admin });
+    // Shown once to whoever created the account; nothing stores the plaintext.
+    res.status(201).json({ admin, ...(generatedPassword ? { generatedPassword } : {}) });
   }),
 );
 
@@ -76,7 +89,14 @@ adminRouter.patch(
     if (!admin) throw ApiError.notFound('Administrator not found');
     if (name !== undefined) admin.name = name;
     if (active !== undefined) admin.active = active;
-    if (password) admin.passwordHash = await hashPassword(password);
+    if (password) {
+      admin.passwordHash = await hashPassword(password);
+      // A reset is normally the fix for a lockout, so lift it rather than leaving the new
+      // password failing until the timer expires. No change-deadline for admins: the forced
+      // rotation exists for the shared personnel default, and admins never get one.
+      admin.failedLoginCount = 0;
+      admin.lockedUntil = null;
+    }
     await admin.save();
     // Record WHICH levers moved, never the password itself. Deactivating an account and
     // resetting someone else's credentials are both privilege events.

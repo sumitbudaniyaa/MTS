@@ -3,6 +3,7 @@ import { Clapperboard, Ticket } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { useUiStore } from '@/stores/ui.store';
 import { LoginDrawer } from '@/features/auth/LoginDrawer';
+import { TempPasswordBanner } from '@/components/TempPasswordBanner';
 import { cn } from '@/lib/cn';
 
 const tabs = [
@@ -44,6 +45,8 @@ export function AppLayout() {
           )}
         </header>
       )}
+
+      <TempPasswordBanner onChangePassword={() => navigate('/profile')} />
 
       <main className={cn('flex-1 overflow-auto', fullScreen ? '' : showPill ? 'pb-24' : 'pb-6')}>
         <Outlet />

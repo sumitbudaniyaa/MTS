@@ -15,6 +15,14 @@ export interface AuthPrincipal {
   sub: string; // user id
   role: Role;
   unit?: string; // unit id (USER only)
+  /**
+   * The account still holds a password someone else set. Carried in the access token so the
+   * gate is a token read rather than a database hit on every request; the token is short-lived,
+   * and changing the password mints a fresh one immediately so the gate lifts at once.
+   */
+  mustChangePassword?: boolean;
+  /** Epoch ms when a borrowed password stops being accepted. */
+  passwordExpiresAt?: number;
 }
 
 declare global {

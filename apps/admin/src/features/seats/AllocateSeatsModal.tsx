@@ -1,18 +1,51 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Save } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Save } from 'lucide-react';
 import { api, apiErrorMessage } from '@/lib/api';
 import type { Paginated, SeatAllocation, Unit } from '@/types';
 import { LoadingState, ErrorState, Badge } from '@/components/ui/Misc';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { NumberInput } from '@/components/ui/NumberInput';
+import { cn } from '@/lib/cn';
+
+type RankKey = 'OFFICER' | 'JCO' | 'JAWAN';
+const RANKS: RankKey[] = ['OFFICER', 'JCO', 'JAWAN'];
+const RANK_LABEL: Record<RankKey, string> = {
+  OFFICER: 'Officer',
+  JCO: 'JCO',
+  JAWAN: 'Jawan',
+};
+
+type Mode = 'EQUAL' | 'MANUAL';
 
 /**
- * Seat-allocation editor for one movie. Shared by the standalone Seat Allocation page and by
- * the movie-creation flow, so both routes edit allocations through exactly the same rules
- * (the total must equal capacity before it can be saved).
+ * Split `total` across `n` units as evenly as possible.
+ *
+ * The remainder cannot vanish, so it goes one seat at a time to the units at the front of the
+ * list: 7 across 3 units is 3/2/2, never 2/2/2 with a seat quietly lost. The order is the unit
+ * list's own order, so the same inputs always produce the same split.
+ */
+function equalSplit(total: number, n: number): number[] {
+  if (n <= 0) return [];
+  const base = Math.floor(total / n);
+  const remainder = total % n;
+  return Array.from({ length: n }, (_, i) => base + (i < remainder ? 1 : 0));
+}
+
+/**
+ * Seat-allocation editor for one movie, in two deliberate steps:
+ *
+ *  1. **Pools by rank** — how many of the hall's seats belong to Officers, JCOs and Jawans.
+ *     Must add up to capacity, because every seat has to belong to exactly one rank pool.
+ *  2. **Distribution** — per rank, either split that pool equally across units or type each
+ *     unit's share by hand.
+ *
+ * They are separate steps because they are separate decisions. The previous single-grid version
+ * derived the rank pools *from* the per-unit numbers, and its "distribute equally" button
+ * invented rank totals from hardcoded 25/30/45% ratios whenever they were still zero — a policy
+ * choice nobody had made.
  */
 export function AllocateSeatsModal({
   movieId,
@@ -30,8 +63,15 @@ export function AllocateSeatsModal({
   isNewMovie?: boolean;
 }) {
   const qc = useQueryClient();
-  // Keyed by `${unitId}:${rank}`
-  const [values, setValues] = useState<Record<string, number>>({});
+  const [step, setStep] = useState<1 | 2>(1);
+  const [pools, setPools] = useState<Record<RankKey, number>>({ OFFICER: 0, JCO: 0, JAWAN: 0 });
+  const [mode, setMode] = useState<Record<RankKey, Mode>>({
+    OFFICER: 'EQUAL',
+    JCO: 'EQUAL',
+    JAWAN: 'EQUAL',
+  });
+  /** Manual per-unit overrides, keyed `${unitId}:${rank}`. Only read when that rank is MANUAL. */
+  const [manual, setManual] = useState<Record<string, number>>({});
 
   const { data: units } = useQuery({
     queryKey: ['units', 'all'],
@@ -47,82 +87,49 @@ export function AllocateSeatsModal({
         .allocations,
   });
 
-  // Seed editable values from existing allocations.
-  useEffect(() => {
-    if (!units) return;
-    const seed: Record<string, number> = {};
-    units.items.forEach((u) => {
-      seed[`${u.id}:OFFICER`] = 0;
-      seed[`${u.id}:JCO`] = 0;
-      seed[`${u.id}:JAWAN`] = 0;
-    });
-    allocQuery.data?.forEach((a) => {
-      const uId = typeof a.unit === 'string' ? a.unit : a.unit.id;
-      const rank = a.rank ?? 'JAWAN';
-      seed[`${uId}:${rank}`] = a.allocated;
-    });
-    setValues(seed);
-  }, [units, allocQuery.data, movieId]);
-
   const activeUnits = useMemo(() => units?.items.filter((u) => u.active) ?? [], [units]);
 
-  const totalsByRank = useMemo(() => {
-    const res = { OFFICER: 0, JCO: 0, JAWAN: 0 };
-    Object.entries(values).forEach(([key, num]) => {
-      const rank = key.split(':')[1] as keyof typeof res;
-      if (rank && res[rank] !== undefined) {
-        res[rank] += Number(num) || 0;
-      }
+  // Seed from whatever is already saved. An existing split starts in MANUAL so reopening the
+  // dialog never silently re-flattens numbers someone set deliberately.
+  useEffect(() => {
+    const existing = allocQuery.data;
+    if (!existing?.length) return;
+    const nextPools: Record<RankKey, number> = { OFFICER: 0, JCO: 0, JAWAN: 0 };
+    const nextManual: Record<string, number> = {};
+    existing.forEach((a) => {
+      const unitId = typeof a.unit === 'string' ? a.unit : a.unit.id;
+      const rank = (a.rank ?? 'JAWAN') as RankKey;
+      nextPools[rank] += a.allocated;
+      nextManual[`${unitId}:${rank}`] = a.allocated;
     });
-    return res;
-  }, [values]);
+    setPools(nextPools);
+    setManual(nextManual);
+    setMode({ OFFICER: 'MANUAL', JCO: 'MANUAL', JAWAN: 'MANUAL' });
+  }, [allocQuery.data]);
 
-  const total = useMemo(
-    () => totalsByRank.OFFICER + totalsByRank.JCO + totalsByRank.JAWAN,
-    [totalsByRank],
-  );
-  const matches = total === capacity && capacity > 0;
+  const poolTotal = RANKS.reduce((sum, r) => sum + (pools[r] || 0), 0);
+  const poolsMatch = poolTotal === capacity && capacity > 0;
 
-  // Auto-distribute equally across active units based on current rank target totals (or equal split)
-  const handleEqualDistribute = () => {
-    if (!activeUnits.length) return;
-    const count = activeUnits.length;
-    // Default split ratios if totals are zero: Jawan ~45%, JCO ~30%, Officer ~25%
-    const currentOfficerTotal = totalsByRank.OFFICER || Math.floor(capacity * 0.25);
-    const currentJcoTotal = totalsByRank.JCO || Math.floor(capacity * 0.30);
-    const currentJawanTotal = capacity - currentOfficerTotal - currentJcoTotal;
-
-    const distributePool = (totalAmount: number, rank: 'OFFICER' | 'JCO' | 'JAWAN') => {
-      const base = Math.floor(totalAmount / count);
-      let remainder = totalAmount % count;
-      const res: Record<string, number> = {};
-      activeUnits.forEach((u) => {
-        const extra = remainder > 0 ? 1 : 0;
-        if (remainder > 0) remainder -= 1;
-        res[`${u.id}:${rank}`] = base + extra;
-      });
-      return res;
-    };
-
-    const next: Record<string, number> = {
-      ...distributePool(currentOfficerTotal, 'OFFICER'),
-      ...distributePool(currentJcoTotal, 'JCO'),
-      ...distributePool(currentJawanTotal, 'JAWAN'),
-    };
-
-    setValues(next);
-    toast.success('Seats distributed equally across units');
+  /** What each unit actually gets for a rank, under that rank's current mode. */
+  const sharesFor = (rank: RankKey): number[] => {
+    if (mode[rank] === 'EQUAL') return equalSplit(pools[rank] || 0, activeUnits.length);
+    return activeUnits.map((u) => manual[`${u.id}:${rank}`] ?? 0);
   };
+
+  /** A rank reconciles when its per-unit shares add up to its pool. */
+  const rankSum = (rank: RankKey) => sharesFor(rank).reduce((a, b) => a + b, 0);
+  const rankOk = (rank: RankKey) => rankSum(rank) === (pools[rank] || 0);
+  const allRanksOk = RANKS.every(rankOk);
 
   const save = useMutation({
     mutationFn: () => {
-      const allocations: { unit: string; rank: 'OFFICER' | 'JCO' | 'JAWAN'; allocated: number }[] = [];
-      Object.entries(values).forEach(([key, count]) => {
-        const [unit, rank] = key.split(':') as [string, 'OFFICER' | 'JCO' | 'JAWAN'];
-        const allocated = Number(count) || 0;
-        if (unit && rank && allocated > 0) {
-          allocations.push({ unit, rank, allocated });
-        }
+      const allocations: { unit: string; rank: RankKey; allocated: number }[] = [];
+      RANKS.forEach((rank) => {
+        const shares = sharesFor(rank);
+        activeUnits.forEach((u, i) => {
+          const allocated = shares[i] ?? 0;
+          if (allocated > 0) allocations.push({ unit: u.id, rank, allocated });
+        });
       });
       return api.put(`/seat-allocations/${movieId}`, { allocations });
     },
@@ -142,6 +149,7 @@ export function AllocateSeatsModal({
     <Modal
       open
       onClose={onClose}
+      // Blocks Escape-to-close while the save is in flight.
       loading={save.isPending}
       title={movieTitle ? `Allocate seats — ${movieTitle}` : 'Allocate seats'}
       footer={
@@ -149,16 +157,31 @@ export function AllocateSeatsModal({
           <Button variant="secondary" onClick={onClose} disabled={save.isPending}>
             {isNewMovie ? 'Skip for now' : 'Close'}
           </Button>
-          <Button onClick={() => save.mutate()} disabled={!matches} loading={save.isPending}>
-            <Save className="h-3.5 w-3.5" /> Save allocations
-          </Button>
+          {step === 1 ? (
+            <Button disabled={!poolsMatch || !!noUnits} onClick={() => setStep(2)}>
+              Next: divide into units <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={() => setStep(1)} disabled={save.isPending}>
+                <ArrowLeft className="h-3.5 w-3.5" /> Back
+              </Button>
+              <Button
+                onClick={() => save.mutate()}
+                disabled={!allRanksOk}
+                loading={save.isPending}
+              >
+                <Save className="h-3.5 w-3.5" /> Save allocations
+              </Button>
+            </>
+          )}
         </>
       }
     >
-      {isNewMovie && (
-        <p className="-mt-1 mb-4 text-sm text-muted">
-          Movie created. Split its {capacity} seats rank-wise and unit-wise now, or skip — unallocated
-          seats stay in the common pool.
+      {isNewMovie && step === 1 && (
+        <p className="-mt-1 text-sm text-muted">
+          Movie created. Split its {capacity} seats by rank now, or skip — unallocated seats stay
+          in the common pool.
         </p>
       )}
 
@@ -172,81 +195,172 @@ export function AllocateSeatsModal({
 
       {units && !noUnits && (
         <>
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-sm">
-            <div className="flex items-center gap-2">
-              <span>
-                Total Allocated: <span className="font-semibold text-fg">{total}</span> / {capacity}
+          {/* Step indicator */}
+          <div className="flex items-center gap-2 text-xs">
+            {([1, 2] as const).map((n) => (
+              <span
+                key={n}
+                className={cn(
+                  'rounded-full px-2.5 py-1 font-medium',
+                  step === n ? 'bg-fg text-bg' : 'bg-surface-2 text-muted',
+                )}
+              >
+                {n}. {n === 1 ? 'Seats per rank' : 'Divide into units'}
               </span>
-              {matches ? (
-                <Badge tone="success">Matches capacity</Badge>
-              ) : (
-                <Badge tone="warning">Must equal {capacity}</Badge>
-              )}
-            </div>
-
-            <Button size="sm" variant="secondary" onClick={handleEqualDistribute}>
-              Distribute Equally Across Units
-            </Button>
+            ))}
           </div>
 
-          <div className="mb-3 flex items-center justify-around rounded-lg border border-border bg-subtle/40 p-2.5 text-xs font-medium">
-            <div>Officer Pool: <span className="text-fg font-semibold">{totalsByRank.OFFICER}</span></div>
-            <div>JCO Pool: <span className="text-fg font-semibold">{totalsByRank.JCO}</span></div>
-            <div>Jawan Pool: <span className="text-fg font-semibold">{totalsByRank.JAWAN}</span></div>
-          </div>
+          {step === 1 ? (
+            <>
+              <p className="text-sm text-muted">
+                Every seat belongs to one rank, so these must add up to the hall&rsquo;s{' '}
+                {capacity} seats. Only that rank can book them.
+              </p>
+              <div className="space-y-3">
+                {RANKS.map((rank) => (
+                  <div key={rank} className="flex items-center justify-between gap-3">
+                    <label className="text-sm font-medium text-fg">{RANK_LABEL[rank]}</label>
+                    <NumberInput
+                      className="h-9 w-24"
+                      value={pools[rank]}
+                      onChange={(n) => setPools((p) => ({ ...p, [rank]: n }))}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3 text-sm">
+                <span>
+                  Allocated <span className="font-semibold text-fg">{poolTotal}</span> of{' '}
+                  {capacity}
+                </span>
+                {poolsMatch ? (
+                  <Badge tone="success">Matches capacity</Badge>
+                ) : (
+                  <Badge tone="warning">
+                    {poolTotal > capacity
+                      ? `${poolTotal - capacity} over`
+                      : `${capacity - poolTotal} left to assign`}
+                  </Badge>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-muted">
+                {activeUnits.length} unit{activeUnits.length === 1 ? '' : 's'}. Choose how each
+                rank&rsquo;s seats are shared out.
+              </p>
 
-          <div className="max-h-[50vh] overflow-x-auto overflow-y-auto rounded-xl border border-border">
-            <table className="w-full text-left text-xs">
-              <thead className="sticky top-0 bg-subtle text-muted">
-                <tr>
-                  <th className="p-3 font-medium">Unit</th>
-                  <th className="p-3 font-medium">Officer Seats</th>
-                  <th className="p-3 font-medium">JCO Seats</th>
-                  <th className="p-3 font-medium">Jawan Seats</th>
-                  <th className="p-3 text-right font-medium">Unit Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {activeUnits.map((u) => {
-                  const off = values[`${u.id}:OFFICER`] ?? 0;
-                  const jco = values[`${u.id}:JCO`] ?? 0;
-                  const jwn = values[`${u.id}:JAWAN`] ?? 0;
-                  const uTotal = off + jco + jwn;
-
+              {RANKS.map((rank) => {
+                const shares = sharesFor(rank);
+                const sum = rankSum(rank);
+                const ok = rankOk(rank);
+                if ((pools[rank] || 0) === 0) {
                   return (
-                    <tr key={u.id} className="hover:bg-subtle/30">
-                      <td className="p-3 font-medium text-fg">{u.name}</td>
-                      <td className="p-2">
-                        <NumberInput
-                          className="h-8 w-20"
-                          value={off}
-                          disabled={save.isPending}
-                          onChange={(n) => setValues((v) => ({ ...v, [`${u.id}:OFFICER`]: n }))}
-                        />
-                      </td>
-                      <td className="p-2">
-                        <NumberInput
-                          className="h-8 w-20"
-                          value={jco}
-                          disabled={save.isPending}
-                          onChange={(n) => setValues((v) => ({ ...v, [`${u.id}:JCO`]: n }))}
-                        />
-                      </td>
-                      <td className="p-2">
-                        <NumberInput
-                          className="h-8 w-20"
-                          value={jwn}
-                          disabled={save.isPending}
-                          onChange={(n) => setValues((v) => ({ ...v, [`${u.id}:JAWAN`]: n }))}
-                        />
-                      </td>
-                      <td className="p-3 text-right font-semibold text-fg">{uTotal}</td>
-                    </tr>
+                    <div key={rank} className="rounded-xl border border-border p-3">
+                      <p className="text-sm font-medium text-fg">{RANK_LABEL[rank]}</p>
+                      <p className="mt-0.5 text-xs text-muted">No seats assigned to this rank.</p>
+                    </div>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
+                }
+                return (
+                  <div key={rank} className="rounded-xl border border-border p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-medium text-fg">
+                        {RANK_LABEL[rank]}{' '}
+                        <span className="font-normal text-muted">
+                          &middot; {pools[rank]} seats
+                        </span>
+                      </p>
+                      <div className="flex overflow-hidden rounded-lg border border-border">
+                        {(['EQUAL', 'MANUAL'] as const).map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => {
+                              // Switching to manual starts from the equal split, so the numbers
+                              // already reconcile and only the ones you change need thought.
+                              if (m === 'MANUAL') {
+                                const seed = equalSplit(pools[rank] || 0, activeUnits.length);
+                                setManual((prev) => {
+                                  const next = { ...prev };
+                                  activeUnits.forEach((u, i) => {
+                                    next[`${u.id}:${rank}`] = seed[i] ?? 0;
+                                  });
+                                  return next;
+                                });
+                              }
+                              setMode((prev) => ({ ...prev, [rank]: m }));
+                            }}
+                            className={cn(
+                              'px-2.5 py-1 text-xs font-medium transition-colors',
+                              mode[rank] === m
+                                ? 'bg-fg text-bg'
+                                : 'bg-surface text-muted hover:bg-surface-2',
+                            )}
+                          >
+                            {m === 'EQUAL' ? 'Equally' : 'Manual'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 space-y-1.5">
+                      {activeUnits.map((u, i) => (
+                        <div key={u.id} className="flex items-center justify-between gap-3">
+                          <span className="min-w-0 truncate text-sm text-fg">{u.name}</span>
+                          {mode[rank] === 'EQUAL' ? (
+                            <span className="shrink-0 text-sm font-semibold tabular-nums text-fg">
+                              {shares[i] ?? 0}
+                            </span>
+                          ) : (
+                            <NumberInput
+                              className="h-8 w-20 shrink-0"
+                              value={manual[`${u.id}:${rank}`] ?? 0}
+                              disabled={save.isPending}
+                              onChange={(n) =>
+                                setManual((prev) => ({ ...prev, [`${u.id}:${rank}`]: n }))
+                              }
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {mode[rank] === 'MANUAL' && (
+                      <div className="mt-2 flex items-center gap-2 border-t border-border pt-2 text-xs">
+                        <span className="tabular-nums">
+                          {sum} of {pools[rank]}
+                        </span>
+                        {ok ? (
+                          <Badge tone="success">Balanced</Badge>
+                        ) : (
+                          <Badge tone="warning">
+                            {sum > (pools[rank] || 0)
+                              ? `${sum - pools[rank]} over`
+                              : `${pools[rank] - sum} left`}
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* An uneven pool can't split evenly — say so rather than letting it look arbitrary. */}
+              {RANKS.some(
+                (r) =>
+                  mode[r] === 'EQUAL' &&
+                  (pools[r] || 0) > 0 &&
+                  (pools[r] || 0) % activeUnits.length !== 0,
+              ) && (
+                <p className="text-xs text-muted">
+                  Where a rank&rsquo;s seats don&rsquo;t divide evenly, the spare seats go to the
+                  first units in the list.
+                </p>
+              )}
+            </>
+          )}
         </>
       )}
     </Modal>

@@ -172,12 +172,27 @@ export function UnitDetailsPage() {
           >
             {personnel.items.map((p) => {
               const isLocked = p.lockedUntil && new Date(p.lockedUntil).getTime() > Date.now();
+              // Still on a password an admin chose. Shown with the days remaining, because the
+              // shared starter password is otherwise invisible until it locks someone out.
+              const expiresAt = p.passwordExpiresAt ? new Date(p.passwordExpiresAt) : null;
+              const daysLeft = expiresAt
+                ? Math.ceil((expiresAt.getTime() - Date.now()) / 86_400_000)
+                : null;
               return (
                 <tr key={p.id}>
                   <Td className="font-medium">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       {p.mobile}
                       {isLocked && <Badge tone="warning">Locked</Badge>}
+                      {p.mustChangePassword && (
+                        <Badge tone={daysLeft !== null && daysLeft <= 0 ? 'danger' : 'warning'}>
+                          {daysLeft === null
+                            ? 'Temp password'
+                            : daysLeft <= 0
+                              ? 'Temp password expired'
+                              : `Temp password · ${daysLeft}d`}
+                        </Badge>
+                      )}
                     </div>
                   </Td>
                   <Td>{p.rank ? <Badge tone="accent">{p.rank}</Badge> : '—'}</Td>

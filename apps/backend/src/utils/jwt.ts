@@ -17,7 +17,14 @@ export function signAccessToken(principal: AuthPrincipal): string {
     algorithm: 'HS256',
   };
   return jwt.sign(
-    { role: principal.role, unit: principal.unit ?? null },
+    {
+      role: principal.role,
+      unit: principal.unit ?? null,
+      ...(principal.mustChangePassword ? { mcp: true } : {}),
+      // Epoch ms. Carried rather than pre-computed as a boolean so the deadline can pass
+      // mid-token and the gate still notices immediately.
+      ...(principal.passwordExpiresAt ? { pwx: principal.passwordExpiresAt } : {}),
+    },
     env.JWT_ACCESS_SECRET,
     { ...options, subject: principal.sub },
   );
@@ -31,6 +38,8 @@ export function verifyAccessToken(token: string): AuthPrincipal {
   return {
     sub: String(decoded.sub),
     role: decoded.role,
+    mustChangePassword: decoded.mcp === true,
+    passwordExpiresAt: typeof decoded.pwx === 'number' ? decoded.pwx : undefined,
     unit: decoded.unit ?? undefined,
   };
 }
